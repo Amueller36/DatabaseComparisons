@@ -2,5 +2,6 @@
 <project version="4">
   <component name="SqlDialectMappings">
     <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/96e41dcd-2385-40e6-b50a-9c0d3ec322f4/console.sql" dialect="ClickHouse" />
+    <file url="file://$PROJECT_DIR$/postgres.sql" dialect="PostgreSQL" />
   </component>
 </project>

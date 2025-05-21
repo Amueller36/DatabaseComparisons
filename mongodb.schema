@@ -1,0 +1,45 @@
+// Collection: listings
+{
+  "_id": ObjectId(), // Auto-generated unique ID for the listing
+  "externalListingId": "string", // Your original listing_id if needed for mapping
+  "status": "string", // e.g., 'active', 'sold', 'pending' (Consider an enum in your application)
+  "price": NumberDecimal("123456.78"), // Use NumberDecimal for precise monetary values
+  "lastSoldDate": ISODate("2024-01-15T00:00:00Z"), // Or null if not previously sold
+  "listedDate": ISODate("2025-05-20T10:00:00Z"), // Date the listing was created/updated
+
+  "broker": {
+    "brokerId": "string", // Or ObjectId if brokers are in a separate small collection
+    "name": "string"
+  },
+
+  "propertyDetails": {
+    "estate": { // Embed estate details (0..1 relationship)
+      "bedrooms": NumberInt(3), // Use NumberInt for whole numbers
+      "bathrooms": NumberInt(2),
+      "houseSizeSqM": NumberDecimal("150.50"), // Size in square meters
+      "solarPanels": Boolean // New attribute (UC3)
+    },
+    "land": { // Embed land data (1..1 relationship)
+      "areaSizeSqM": NumberDecimal("500.00")
+    },
+    "type": "string" // e.g., 'House', 'Apartment', 'Land'
+  },
+
+  "address": { // Embed address details
+    "street": "string",
+    "zipCode": "string", // Store as string for flexibility (e.g., leading zeros, international)
+    "city": "string",
+    "state": "string",
+    "location": { // For geospatial queries
+      "type": "Point",
+      "coordinates": [longitude, latitude] // e.g., [9.05, 50.93] for Cologne
+    }
+  },
+
+  // For easier querying on average price per sqm
+  "pricePerSqM": NumberDecimal("823.05"), // Calculated as price / (houseSizeSqM or areaSizeSqM)
+                                         // This is denormalized for read performance.
+                                         // Update when price or relevant size changes.
+
+  "tags": ["string"] // e.g., ["waterfront", "newly_renovated", "garden"]
+}
