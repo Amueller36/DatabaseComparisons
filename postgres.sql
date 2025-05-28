@@ -1,21 +1,15 @@
 -- ENUM Type for listing status (UC specific)
 -- Provides data integrity and can be more efficient than VARCHAR
 CREATE TYPE listing_status_enum AS ENUM (
-    'active',
-    'pending',
-    'sold',
-    'withdrawn',
-    'expired'
-    -- Add other relevant statuses as needed
+    'for_sale',
+    'ready_to_build',
+    'sold'
 );
 
 -- Independent tables (Referential Integrity Hubs)
 CREATE TABLE "brokers" (
-  "brokered_by" INT PRIMARY KEY,
-  "broker_name" VARCHAR(255) NOT NULL
+  "brokered_by" INT PRIMARY KEY
 );
--- Index for searching brokers by name if that's a common lookup
-CREATE INDEX IF NOT EXISTS idx_brokers_broker_name ON "brokers"("broker_name" varchar_pattern_ops);
 
 
 CREATE TABLE "zip_codes" (
@@ -55,7 +49,6 @@ CREATE TABLE "estate_details" (
   "bed" INT,
   "bath" INT,
   "house_size" NUMERIC(10, 2),     -- Changed from FLOAT to NUMERIC (e.g., up to 99,999,999.99 sq units)
-  "solar_panels" BOOLEAN DEFAULT FALSE, -- New attribute for UC3, with a default
 
   CONSTRAINT "fk_estate_details_listing"
     FOREIGN KEY ("listing_id")
@@ -68,8 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_estate_details_bed ON "estate_details"("bed"); --
 CREATE INDEX IF NOT EXISTS idx_estate_details_house_size ON "estate_details"("house_size"); -- For UC4a, UC5, UC6
 -- Composite index for common filter combinations (UC6)
 CREATE INDEX IF NOT EXISTS idx_estate_details_bed_house_size ON "estate_details"("bed", "house_size");
--- Partial index if you frequently query for listings WITH solar panels (UC3 related queries)
-CREATE INDEX IF NOT EXISTS idx_estate_details_has_solar_panels ON "estate_details"("listing_id") WHERE "solar_panels" IS TRUE;
+
 
 
 -- Details related to land (1..1 relationship with listings)

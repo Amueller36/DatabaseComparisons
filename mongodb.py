@@ -9,7 +9,7 @@ from ListingRecord import ListingRecord, read_listings
 from usecases import Usecases
 
 # --- Configuration ---
-MONGO_URI = "mongodb://localhost:27020"
+MONGO_URI = "mongodb://152.53.248.27:27020"
 DATABASE_NAME = "real_estate_db"
 COLLECTION_NAME = "listings"
 CSV_FILE_PATH = "transformed_real_estate_data.csv"
@@ -453,11 +453,12 @@ if __name__ == "__main__":
 
     print(f"Total documents in collection: {mongo_db.get_total_count()}")
     mongo_db.reset_database()
-    print(f"Total documents in collection: {mongo_db.get_total_count()}")
+    #print(f"Total documents in collection: {mongo_db.get_total_count()}")
 
     mongo_db.usecase7_batch_import(data)
 
-    filtered_properties = mongo_db.usecase1_filter_properties(min_listings=100, max_price=50000)
+
+    filtered_properties = mongo_db.usecase1_filter_properties(min_listings=10, max_price=250000)
     print(f"Filtered properties: {len(filtered_properties)} found")
     mongo_db.__del__()
 

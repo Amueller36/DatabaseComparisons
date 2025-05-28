@@ -8,7 +8,6 @@ CREATE TABLE listings_denormalized
 
     -- Broker Info (denormalized from brokers table)
     broker_id UInt64,
-    broker_name String,
 
     -- Estate Details (denormalized from estate_details, nullable due to 0..1 relationship)
     bed Nullable(UInt8),

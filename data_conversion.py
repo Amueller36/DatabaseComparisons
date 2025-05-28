@@ -30,7 +30,7 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     # 4) Erforderliche Spalten validieren und ungültige Zeilen entfernen
-    required = ["brokered_by", "status", "price", "lot_size_sqm"]
+    required = ["brokered_by", "status", "price", "zip_code", "street", "city", "state"]
     # Konvertiere diese Spalten in numeric/string, damit dropna greift
     df["brokered_by"] = pd.to_numeric(df.get("brokered_by"), errors="coerce")
     df["price"]       = pd.to_numeric(df.get("price"), errors="coerce")
