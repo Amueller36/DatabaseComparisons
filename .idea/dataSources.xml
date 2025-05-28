@@ -22,5 +22,12 @@
       <jdbc-url>mongodb://152.53.248.27:27020</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="argument-mining@argumentmining.ddns.net" uuid="fd1b7627-5b31-4a7d-8190-1b53699ed0d7">
+      <driver-ref>mariadb</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.mariadb.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:mariadb://argumentmining.ddns.net:3306/argument-mining</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>
