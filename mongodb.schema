@@ -1,7 +1,6 @@
 // Collection: listings
 {
   "_id": ObjectId(), // Auto-generated unique ID for the listing
-  "externalListingId": "string", // Your original listing_id if needed for mapping
   "status": "string", // e.g., 'active', 'sold', 'pending' (Consider an enum in your application)
   "price": NumberDecimal("123456.78"), // Use NumberDecimal for precise monetary values
   "lastSoldDate": ISODate("2024-01-15T00:00:00Z"), // Or null if not previously sold

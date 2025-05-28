@@ -1,198 +1,465 @@
+from typing import List, Dict, Any, Iterable, override
 import pandas as pd
-from pymongo import MongoClient, errors
-
+import pymongo
+from pymongo import MongoClient, errors, ASCENDING
 from datetime import datetime
+import random
+
+from ListingRecord import ListingRecord, read_listings
+from usecases import Usecases
 
 # --- Configuration ---
 MONGO_URI = "mongodb://localhost:27020"
 DATABASE_NAME = "real_estate_db"
-COLLECTION_NAME = "listings"  # This matches your main SQL table name
-CSV_FILE_PATH = "transformed_real_estate_data.csv"  # <--- ENSURE THIS IS THE CORRECT CSV (likely the one already transformed to SQM)
+COLLECTION_NAME = "listings"
+CSV_FILE_PATH = "transformed_real_estate_data.csv"
 BATCH_SIZE = 1000
 
 
-# --- Helper Conversion Functions ---
-def safe_to_int(value_str):
-    """Safely converts a string (potentially representing a float like "123.00") to an int."""
-    stripped_value = str(value_str).strip()
-    if stripped_value:
+class MongoDb(Usecases):
+    def __init__(self):
+        """Initialize MongoDB connection and setup collection reference."""
         try:
-            return int(float(stripped_value))
-        except ValueError:
-            print(f"  Warning: Could not convert '{value_str}' to int.")
-            return None
-    return None
+            self.client = MongoClient(MONGO_URI)
+            self.db = self.client[DATABASE_NAME]
+            self.collection = self.db[COLLECTION_NAME]
+            # Test connection
+            self.client.admin.command('ping')
+        except errors.ConnectionFailure as e:
+            raise ConnectionError(f"Failed to connect to MongoDB: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize MongoDB connection: {e}")
 
+    def __del__(self):
+        """Clean up MongoDB connection."""
+        if hasattr(self, 'client'):
+            self.client.close()
 
-def safe_to_float(value_str):
-    """Safely converts a string to a float."""
-    stripped_value = str(value_str).strip()
-    if stripped_value:
+    def usecase1_filter_properties(self, min_listings: int, max_price: float) -> List[Dict[str, Any]]:
+        """
+        Use Case 1: Find cities with more than min_listings properties and price under max_price.
+        Returns: List of matching property documents.
+        """
         try:
-            return float(stripped_value)
-        except ValueError:
-            print(f"  Warning: Could not convert '{value_str}' to float.")
-            return None
-    return None
+            # First, find cities that have more than min_listings properties
+            city_counts = self.collection.aggregate([
+                {
+                    "$group": {
+                        "_id": "$address.city",
+                        "count": {"$sum": 1}
+                    }
+                },
+                {
+                    "$match": {
+                        "count": {"$gt": min_listings},
+                        "_id": {"$ne": None}  # Exclude null cities
+                    }
+                }
+            ])
 
+            # Extract qualifying cities
+            qualifying_cities = [doc["_id"] for doc in city_counts]
 
-def parse_date_flexible(date_str):
-    """Parses a date string into a datetime object."""
-    if not date_str or (isinstance(date_str, float) and pd.isna(date_str)):
-        return None
-    date_str = str(date_str).strip()
-    if not date_str:
-        return None
-    formats_to_try = ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y", "%d-%m-%Y %H:%M:%S", "%d-%m-%Y"]
-    for fmt in formats_to_try:
+            if not qualifying_cities:
+                return []
+
+            # Find all properties in qualifying cities with price under max_price
+            query = {
+                "address.city": {"$in": qualifying_cities},
+                "price": {"$lt": max_price, "$ne": None}
+            }
+
+            return list(self.collection.find(query))
+
+        except Exception as e:
+            print(f"Error in usecase1_filter_properties: {e}")
+            return []
+
+    def usecase2_update_prices(self, broker_id: str, percent_delta: float, limit: int) -> int:
+        """
+        Use Case 2: Update prices by percent_delta for first limit properties of the same broker.
+        Returns: Number of updated documents.
+        """
         try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-    print(f"Warning: Could not parse date string: '{date_str}' with known formats.")
-    return None
+            # Convert broker_id to int since brokered_by is stored as int
+            broker_id_int = int(float(broker_id))
 
+            # Find properties for the specific broker, sorted by _id for consistency
+            properties = self.collection.find(
+                {"brokered_by": broker_id_int, "price": {"$ne": None}}
+            ).sort("_id", 1).limit(limit)
 
-def main():
-    print(f"Starting data ingestion from '{CSV_FILE_PATH}' to MongoDB collection '{COLLECTION_NAME}'...")
+            property_ids = [prop["_id"] for prop in properties]
 
-    try:
-        client = MongoClient(MONGO_URI)
-        db = client[DATABASE_NAME]
-        collection = db[COLLECTION_NAME]
-        print(f"Connected to MongoDB: {MONGO_URI}, Database: {DATABASE_NAME}, Collection: {COLLECTION_NAME}")
+            if not property_ids:
+                return 0
 
-        # Define new index structures based on the new schema
-        print("Ensuring indexes exist based on new schema...")
+            # Update prices using aggregation pipeline
+            multiplier = 1 + percent_delta
+            update_result = self.collection.update_many(
+                {"_id": {"$in": property_ids}},
+                [{"$set": {"price": {"$multiply": ["$price", multiplier]}}}]
+            )
+
+            return update_result.modified_count
+
+        except (ValueError, TypeError) as e:
+            print(f"Invalid broker_id format: {e}")
+            return 0
+        except Exception as e:
+            print(f"Error in usecase2_update_prices: {e}")
+            return 0
+
+    def usecase3_add_solar_panels(self) -> int:
+        """
+        Use Case 3: Add solar_panels boolean field to all documents with random values.
+        Returns: Number of processed documents.
+        """
         try:
-            # Indexes for 'listings' collection
-            collection.create_index([("brokered_by", 1)], name="idx_brokered_by")
-            collection.create_index([("price", 1)], name="idx_price")
-            collection.create_index([("status", 1)], name="idx_status")
+            # Get all document IDs
+            all_docs = self.collection.find({}, {"_id": 1})
+            doc_ids = [doc["_id"] for doc in all_docs]
 
-            # Indexes for fields within embedded documents
-            collection.create_index([("estate_details.bed", 1)], name="idx_estate_bed")
-            collection.create_index([("estate_details.house_size", 1)], name="idx_estate_house_size")
-            collection.create_index([("land_data.area_size_in_square_m", 1)], name="idx_land_area_size")
-            collection.create_index([("address.zip_code", 1)], name="idx_address_zip")
-            collection.create_index([("address.city", 1)], name="idx_address_city")
-            collection.create_index([("address.state", 1)], name="idx_address_state")
+            if not doc_ids:
+                return 0
 
-            # Example compound indexes (adjust as needed for your queries)
-            collection.create_index([("address.city", 1), ("price", 1)], name="idx_address_city_price")
-            collection.create_index([("estate_details.bed", 1), ("estate_details.house_size", 1)],
-                                    name="idx_estate_bed_size")
+            # Update documents in batches to avoid memory issues
+            batch_size = 1000
+            total_updated = 0
 
-            print("Indexes ensured successfully.")
-        except errors.OperationFailure as e:
-            print(f"Warning: Index creation failed or partially failed: {e}")
+            for i in range(0, len(doc_ids), batch_size):
+                batch_ids = doc_ids[i:i + batch_size]
 
-        total_documents_inserted = 0
-        chunk_count = 0
+                # Generate random boolean values for this batch
+                bulk_ops = []
+                for doc_id in batch_ids:
+                    bulk_ops.append({
+                        "updateOne": {
+                            "filter": {"_id": doc_id},
+                            "update": {"$set": {"solar_panels": random.choice([True, False])}}
+                        }
+                    })
 
-        for df_chunk in pd.read_csv(CSV_FILE_PATH, chunksize=BATCH_SIZE, low_memory=False, na_filter=False):
-            chunk_count += 1
-            print(f"Processing chunk {chunk_count} (approx. {len(df_chunk)} rows)...")
+                if bulk_ops:
+                    result = self.collection.bulk_write(bulk_ops)
+                    total_updated += result.modified_count
 
-            documents_batch = []
-            rows_in_chunk_processed = 0
-            for index, row in df_chunk.iterrows():
-                rows_in_chunk_processed += 1
+            return total_updated
+
+        except Exception as e:
+            print(f"Error in usecase3_add_solar_panels: {e}")
+            return 0
+
+    def usecase4_price_analysis(self, postal_code: str, below_avg_pct: float, city: str) -> Dict[
+        str, List[Dict[str, Any]]]:
+        """
+        Use Case 4:
+        1. Find properties in postal_code that are below_avg_pct under local avg price per sqm
+        2. Sort all properties in city by cheapest price
+        Returns: Dictionary with "below_threshold" and "sorted_by_city" lists
+        """
+        try:
+            postal_code_int = int(postal_code)
+            result = {"below_threshold": [], "sorted_by_city": []}
+
+            # Part 1: Find properties below threshold in postal code
+            # First calculate average price per sqm for the postal code
+            avg_pipeline = [
+                {
+                    "$match": {
+                        "address.zip_code": postal_code_int,
+                        "price": {"$ne": None, "$gt": 0},
+                        "land_data.area_size_in_square_m": {"$ne": None, "$gt": 0}
+                    }
+                },
+                {
+                    "$addFields": {
+                        "price_per_sqm": {
+                            "$divide": ["$price", "$land_data.area_size_in_square_m"]
+                        }
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": None,
+                        "avg_price_per_sqm": {"$avg": "$price_per_sqm"}
+                    }
+                }
+            ]
+
+            avg_result = list(self.collection.aggregate(avg_pipeline))
+
+            if avg_result:
+                avg_price_per_sqm = avg_result[0]["avg_price_per_sqm"]
+                threshold = avg_price_per_sqm * (1 - below_avg_pct)
+
+                # Find properties below threshold
+                below_threshold_pipeline = [
+                    {
+                        "$match": {
+                            "address.zip_code": postal_code_int,
+                            "price": {"$ne": None, "$gt": 0},
+                            "land_data.area_size_in_square_m": {"$ne": None, "$gt": 0}
+                        }
+                    },
+                    {
+                        "$addFields": {
+                            "price_per_sqm": {
+                                "$divide": ["$price", "$land_data.area_size_in_square_m"]
+                            }
+                        }
+                    },
+                    {
+                        "$match": {
+                            "price_per_sqm": {"$lt": threshold}
+                        }
+                    }
+                ]
+
+                result["below_threshold"] = list(self.collection.aggregate(below_threshold_pipeline))
+
+            # Part 2: Sort all properties in city by price
+            city_properties = self.collection.find(
+                {
+                    "address.city": city,
+                    "price": {"$ne": None, "$gt": 0}
+                }
+            ).sort("price", 1)  # 1 for ascending (cheapest first)
+
+            result["sorted_by_city"] = list(city_properties)
+
+            return result
+
+        except (ValueError, TypeError) as e:
+            print(f"Invalid postal_code format: {e}")
+            return {"below_threshold": [], "sorted_by_city": []}
+        except Exception as e:
+            print(f"Error in usecase4_price_analysis: {e}")
+            return {"below_threshold": [], "sorted_by_city": []}
+
+    def usecase5_average_price_per_city(self) -> Dict[str, float]:
+        """
+        Use Case 5: Calculate average price per square meter for each city.
+        Returns: Mapping of city → average price per sqm.
+        """
+        try:
+            pipeline = [
+                {
+                    "$match": {
+                        "address.city": {"$ne": None},
+                        "price": {"$ne": None, "$gt": 0},
+                        "land_data.area_size_in_square_m": {"$ne": None, "$gt": 0}
+                    }
+                },
+                {
+                    "$addFields": {
+                        "price_per_sqm": {
+                            "$divide": ["$price", "$land_data.area_size_in_square_m"]
+                        }
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$address.city",
+                        "avg_price_per_sqm": {"$avg": "$price_per_sqm"}
+                    }
+                },
+                {
+                    "$sort": {"_id": 1}
+                }
+            ]
+
+            results = self.collection.aggregate(pipeline)
+            return {doc["_id"]: doc["avg_price_per_sqm"] for doc in results}
+
+        except Exception as e:
+            print(f"Error in usecase5_average_price_per_city: {e}")
+            return {}
+
+    def usecase6_filter_by_bedrooms_and_size(self, min_bedrooms: int, max_size: float) -> List[Dict[str, Any]]:
+        """
+        Use Case 6: Find properties with more than min_bedrooms and size less than max_size.
+        Returns: List of matching documents.
+        """
+        try:
+            query = {
+                "estate_details.bed": {"$gt": min_bedrooms, "$ne": None},
+                "estate_details.house_size": {"$lt": max_size, "$ne": None}
+            }
+
+            return list(self.collection.find(query))
+
+        except Exception as e:
+            print(f"Error in usecase6_filter_by_bedrooms_and_size: {e}")
+            return []
+    @override
+    def usecase7_batch_import(self, data: Iterable[ListingRecord], batch_size: int = 1000) -> None:
+        """
+        Use Case 7: Batch import all real estate data from ListingRecord objects.
+        Handles both single inserts and bulk operations for performance comparison.
+        """
+        try:
+            # Convert ListingRecord objects to MongoDB documents in batches
+            batch = []
+            total_processed = 0
+            total_inserted = 0
+            batch_count = 0
+
+            for listing_record in data:
                 try:
-                    doc = {}
+                    # Convert ListingRecord to MongoDB document format
+                    doc = self._listing_record_to_document(listing_record)
+                    batch.append(doc)
 
-                    # --- listings ---
-                    doc["brokered_by"] = safe_to_int(row.get("brokered_by", ""))  # From CSV brokered_by
-                    doc["status"] = str(row.get("status", "")).strip() or None
-                    doc["price"] = safe_to_float(row.get("price", ""))  # From CSV price
-                    doc["prev_sold_date"] = parse_date_flexible(row.get("prev_sold_date", ""))
+                    # Process batch when it reaches batch_size
+                    if len(batch) >= batch_size:
+                        batch_count += 1
+                        inserted_count = self._insert_batch(batch, batch_count)
+                        total_inserted += inserted_count
+                        total_processed += len(batch)
+                        batch = []  # Reset batch
 
-                    # --- estate_details (embedded) ---
-                    estate_details = {
-                        "bed": safe_to_int(row.get("bed", "")),  # From CSV bed
-                        "bath": safe_to_int(row.get("bath", "")),  # From CSV bath
-                        # IMPORTANT: Assumes CSV has 'house_size_sqm' column (value in sqm)
-                        "house_size": safe_to_float(row.get("house_size_sqm", ""))  # SQL name: house_size
-                    }
-                    doc["estate_details"] = estate_details
+                except Exception as e:
+                    print(f"Error converting ListingRecord to document: {e}")
+                    continue
 
-                    # --- land_data (embedded) ---
-                    land_data = {
-                        # IMPORTANT: Assumes CSV has 'lot_size_sqm' column (value in sqm)
-                        "area_size_in_square_m": safe_to_float(row.get("lot_size_sqm", ""))
-                        # SQL name: area_size_in_square_m
-                    }
-                    doc["land_data"] = land_data
+            # Process remaining records in the last batch
+            if batch:
+                batch_count += 1
+                inserted_count = self._insert_batch(batch, batch_count)
+                total_inserted += inserted_count
+                total_processed += len(batch)
 
-                    # --- addresses & zip_codes (combined and embedded as 'address') ---
-                    # SQL wants zip_code as int, which will lose leading zeros (e.g., "00601" becomes 601)
-                    # If preserving leading zeros is important, store zip_code as string in MongoDB.
-                    # For this script, implementing as int per your SQL schema.
-                    address = {
-                        "street": safe_to_float(row.get("street", "")),  # From CSV street, SQL type float
-                        "zip_code": safe_to_int(row.get("zip_code", "")),  # From CSV zip_code
-                        "city": str(row.get("city", "")).strip() or None,  # From CSV city
-                        "state": str(row.get("state", "")).strip() or None  # From CSV state
-                    }
-                    doc["address"] = address
+            print(
+                f"Batch import completed: {total_inserted}/{total_processed} documents successfully inserted across {batch_count} batches")
 
-                    documents_batch.append(doc)
-                except Exception as e:  # Catch any other unexpected error during doc creation
-                    print(
-                        f"  Skipping row due to UNEXPECTED error during document creation (chunk {chunk_count}, approx row in CSV: {total_documents_inserted + rows_in_chunk_processed}): {e}. Data: {row.to_dict()}")
+        except Exception as e:
+            print(f"Error in usecase7_batch_import: {e}")
 
-            if documents_batch:
+    def _listing_record_to_document(self, listing_record: ListingRecord) -> Dict[str, Any]:
+        """Convert a ListingRecord to MongoDB document format matching the schema."""
+        doc = {
+            # Top-level fields
+            "brokered_by": int(listing_record.brokered_by) if listing_record.brokered_by is not None else None,
+            "status": listing_record.status,
+            "price": listing_record.price,
+            "prev_sold_date": listing_record.prev_sold_date,
+
+            # Embedded estate_details
+            "estate_details": {
+                "bed": int(listing_record.bed) if listing_record.bed is not None else None,
+                "bath": int(listing_record.bath) if listing_record.bath is not None else None,
+                "house_size": listing_record.house_size_sqm
+            },
+
+            # Embedded land_data
+            "land_data": {
+                "area_size_in_square_m": listing_record.lot_size_sqm
+            },
+
+            # Embedded address
+            "address": {
+                "street": listing_record.street,
+                "zip_code": listing_record.zip_code,
+                "city": listing_record.city,
+                "state": listing_record.state
+            }
+        }
+        return doc
+
+    def _insert_batch(self, batch: List[Dict[str, Any]], batch_number: int) -> int:
+        """Insert a batch of documents with error handling."""
+        try:
+            # Option 1: Bulk insert (recommended for large datasets)
+            result = self.collection.insert_many(batch, ordered=False)
+            inserted_count = len(result.inserted_ids)
+            print(f"Batch {batch_number}: Bulk insert successful - {inserted_count} documents inserted")
+            return inserted_count
+
+        except errors.BulkWriteError as bwe:
+            successful_inserts = bwe.details.get('nInserted', 0)
+            error_count = len(bwe.details.get('writeErrors', []))
+            print(
+                f"Batch {batch_number}: Bulk insert partial success - {successful_inserts} inserted, {error_count} errors")
+            return successful_inserts
+
+        except Exception as e:
+            print(f"Batch {batch_number}: Bulk insert failed ({e}), falling back to individual inserts")
+            # Fallback to individual inserts
+            successful_inserts = 0
+            for i, doc in enumerate(batch):
                 try:
-                    collection.insert_many(documents_batch, ordered=False)
-                    inserted_count_this_batch = len(documents_batch)
-                    total_documents_inserted += inserted_count_this_batch
-                    print(
-                        f"  Inserted batch of {inserted_count_this_batch} documents. Total inserted so far: {total_documents_inserted}")
-                except errors.BulkWriteError as bwe:
-                    # Basic logging for bulk write errors; bwe.details contains more info
-                    # Successfully inserted count can be derived from bwe.details['nInserted'] if needed.
-                    print(
-                        f"  Bulk write error during insert_many. Some documents may not have been inserted. Details (partial): {bwe.details.get('writeErrors', [])[:2]}")  # Log first 2 errors
-                    # You might want to count successful inserts from bwe.details if precision is critical here
-                    # For now, total_documents_inserted reflects attempted appends to batch.
-            else:
-                print("  No documents to insert in this batch (all rows might have had errors or chunk was empty).")
+                    self.collection.insert_one(doc)
+                    successful_inserts += 1
+                except Exception as insert_error:
+                    print(f"Batch {batch_number}, document {i + 1}: Individual insert failed - {insert_error}")
 
-    except FileNotFoundError:
-        print(f"Fatal Error: CSV file not found at '{CSV_FILE_PATH}'. Please check the path.")
-        return
-    except errors.ServerSelectionTimeoutError as sste:  # More specific connection error
-        print(
-            f"Fatal Error: Could not connect to MongoDB at '{MONGO_URI}' (Server selection timeout). Check if MongoDB is running, accessible, and URI is correct. Error: {sste}")
-        return
-    except errors.ConnectionFailure as cf:
-        print(
-            f"Fatal Error: Could not connect to MongoDB at '{MONGO_URI}'. Check if MongoDB is running and accessible. Error: {cf}")
-        return
-    except Exception as e:
-        print(f"An unexpected fatal error occurred: {e}")
-        # For detailed debugging:
-        # import traceback
-        # traceback.print_exc()
-        return
-    finally:
-        if 'client' in locals() and client:
-            client.close()
-            print("MongoDB connection closed.")
+            print(
+                f"Batch {batch_number}: Individual inserts completed - {successful_inserts}/{len(batch)} documents inserted")
+            return successful_inserts
+    def reset_database(self) -> None:
+        """
+        Delete all entries in the database.
+        """
+        try:
+            result = self.collection.delete_many({})
+            print(f"Deleted {result.deleted_count} documents from the database")
+        except Exception as e:
+            print(f"Error in reset_database: {e}")
 
-    print(f"\n--- Ingestion Summary ---")
-    print(f"Processed {chunk_count} chunks.")
-    print(
-        f"Total documents successfully added to insert batches: {total_documents_inserted}")  # This count might be higher than actual DB inserts if BulkWriteErrors occurred.
-    print(f"Data ingestion finished.")
+    # Additional utility methods for database management
+    def get_total_count(self) -> int:
+        """Get total number of documents in the collection."""
+        try:
+            return self.collection.count_documents({})
+        except Exception as e:
+            print(f"Error getting total count: {e}")
+            return 0
 
+    def create_indexes(self) -> None:
+        """Create recommended indexes for better query performance."""
+        try:
+            indexes = [
+                ("brokered_by", ASCENDING),
+                ("price", ASCENDING),
+                ("status", ASCENDING),
+                ("estate_details.bed", ASCENDING),
+                ("estate_details.house_size", ASCENDING),
+                ("land_data.area_size_in_square_m", ASCENDING),
+                ("address.zip_code", ASCENDING),
+                ("address.city", ASCENDING),
+                ("address.state", ASCENDING),
+                (("address.city", ASCENDING), ("price", ASCENDING)),  # Compound index
+                (("estate_details.bed", ASCENDING), ("estate_details.house_size", ASCENDING))  # Compound index
+            ]
+
+
+            for index in indexes:
+                if isinstance(index, tuple) and len(index) == 2 and isinstance(index[1], int):
+                    # Single field index
+                    self.collection.create_index([(index[0], index[1])])
+                elif isinstance(index, tuple):
+                    # Compound index
+                    self.collection.create_index(list(index))
+
+            print("Indexes created successfully")
+        except Exception as e:
+            print(f"Error creating indexes: {e}")
 
 if __name__ == "__main__":
-    # Before running:
-    # 1. Ensure your MongoDB server is running and accessible via MONGO_URI.
-    # 2. CRITICAL: Verify CSV_FILE_PATH. This script assumes it's the CSV that has
-    #    ALREADY been transformed (contains 'lot_size_sqm' and 'house_size_sqm').
-    #    If you are using the ORIGINAL CSV, the logic for 'house_size' and
-    #    'area_size_in_square_m' needs to include the unit conversions (sqft/acres to sqm).
-    # 3. Install necessary libraries: pip install pymongo pandas
-    main()
+    # Example usage
+    mongo_db = MongoDb()
+    data = read_listings(CSV_FILE_PATH)
+
+    print(f"Total documents in collection: {mongo_db.get_total_count()}")
+    mongo_db.reset_database()
+    print(f"Total documents in collection: {mongo_db.get_total_count()}")
+
+    mongo_db.usecase7_batch_import(data)
+
+    filtered_properties = mongo_db.usecase1_filter_properties(min_listings=100, max_price=50000)
+    print(f"Filtered properties: {len(filtered_properties)} found")
+    mongo_db.__del__()
+
+    # # Clean up
+    # mongo_db.reset_database()

@@ -401,3 +401,5 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 .idea/sqldialects.xml
+transformed_real_estate_data.csv
+realtor-data.zip.csv

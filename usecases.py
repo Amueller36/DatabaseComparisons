@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Iterable
+
+from ListingRecord import ListingRecord
+
 
 class Usecases(ABC):
     @abstractmethod
@@ -88,12 +91,20 @@ class Usecases(ABC):
     @abstractmethod
     def usecase7_batch_import(
         self,
-        data: List[Dict[str, Any]]
+        data: Iterable[ListingRecord],
+        batch_size: int = 1000
     ) -> None:
         """
         Use Case 7:
         Batch-Import aller Immobilien-Daten (`data`).
         (In der Implementierung kann man dann auch Einzeleinfügungen
         vs. Bulk-Insert messen.)
+        """
+        ...
+    
+    @abstractmethod
+    def reset_database(self) -> None:
+        """
+        Lösche alle Einträge in der Datenbank.
         """
         ...
