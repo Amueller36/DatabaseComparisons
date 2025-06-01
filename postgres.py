@@ -42,7 +42,6 @@ class PostgresUsecases(Usecases):
 
             self._create_enum_types_if_not_existent()
             self._create_tables_if_not_existent()
-            self.create_indexes()
             print("Datenbankschema erfolgreich initialisiert/überprüft.")
         except psycopg2.Error as e:
             print(f"Fehler während der Initialisierung des PostgresDBAdapters: {e}")
@@ -350,6 +349,30 @@ class PostgresUsecases(Usecases):
                     # Fehler wurde bereits in _execute_command behandelt und geloggt
                     print(f"  Fehler beim Erstellen/Prüfen des Index '{index_name_guess}'.")
                     # raise # Optional: Abbruch, wenn Indizes kritisch sind
+
+    def drop_indexes(self):
+        """Löscht alle benutzerdefinierten Indizes, sofern sie existieren."""
+        index_names = [
+            "idx_zip_codes_city",
+            "idx_zip_codes_state_city",
+            "idx_listings_price",
+            "idx_listings_status",
+            "idx_listings_brokered_by_price",
+            "idx_estate_details_bed",
+            "idx_estate_details_house_size",
+            "idx_estate_details_bed_house_size",
+            "idx_land_data_area_size",
+            "idx_addresses_zip_code_street",
+            "idx_addresses_zip_code_street_std",  # Falls dieser verwendet wurde
+        ]
+        print("Lösche benutzerdefinierte Indizes...")
+        for idx in index_names:
+            try:
+                drop_cmd = f'DROP INDEX IF EXISTS "{idx}";'
+                self._execute_command(drop_cmd)
+                print(f"  Index '{idx}' gelöscht (oder existierte nicht).")
+            except psycopg2.Error as e:
+                print(f"  Fehler beim Löschen des Index '{idx}': {e}")
 
     def _get_full_listing_details_sql_select_clause(self) -> str:
         # Check if solar_panels column exists in listings
@@ -935,6 +958,7 @@ class PostgresUsecases(Usecases):
                 """
         try:
             self._execute_query(query, commit=True)
+            self.drop_indexes()
             logger.info("Database has been reset (all entries deleted, identities restarted).")
         except psycopg2.Error as e:
             logger.error(f"Failed to reset database: {e}")
@@ -960,8 +984,8 @@ if __name__ == "__main__":
     data = read_listings(CSV_FILE_PATH)
 
     postgres.reset_database()
-    #
     postgres.usecase7_bulk_import(data, 20000)
+    postgres.create_indexes()
 
     # Example usage
     test = postgres.usecase1_filter_properties(10, 250000)
