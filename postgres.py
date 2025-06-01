@@ -44,6 +44,7 @@ class PostgresAdapter(Usecases):
 
             self._create_enum_types_if_not_existent()
             self._create_tables_if_not_existent()
+            self.create_indexes()
             print("Datenbankschema erfolgreich initialisiert/überprüft.")
         except psycopg2.Error as e:
             print(f"Fehler während der Initialisierung des PostgresDBAdapters: {e}")
@@ -626,6 +627,7 @@ class PostgresAdapter(Usecases):
         if not isinstance(batch_size, int) or batch_size <= 0:
             raise ValueError("batch_size must be a positive integer.")
 
+        self.create_indexes()
 
         records_list = list(data)
 
@@ -1000,17 +1002,3 @@ class PostgresAdapter(Usecases):
         self.close()
 
 
-
-if __name__ == "__main__":
-    postgres = PostgresAdapter()
-    print(f"Total count {postgres.get_total_count()}")
-
-    data = read_listings(CSV_FILE_PATH)
-
-    postgres.reset_database()
-    postgres.usecase7_bulk_import(data, 20000)
-    postgres.create_indexes()
-
-    # Example usage
-    test = postgres.usecase1_filter_properties(10, 250000)
-    print(f"Usecase 1  Found: {len(test)}")

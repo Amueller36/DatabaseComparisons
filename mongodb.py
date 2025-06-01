@@ -340,6 +340,7 @@ class MongoDbAdapter(Usecases):
             total_processed = 0
             total_inserted = 0
             batch_count = 0
+            self.create_indexes()
 
             for listing_record in data:
                 try:
@@ -438,7 +439,7 @@ class MongoDbAdapter(Usecases):
         Delete all entries in the database.
         """
         try:
-            result = self.collection.drop()
+            self.collection.drop()
             print(f"Deleted All documents from the database")
         except Exception as e:
             print(f"Error in reset_database: {e}")
@@ -482,26 +483,3 @@ class MongoDbAdapter(Usecases):
         except Exception as e:
             print(f"Error creating indexes: {e}")
 
-if __name__ == "__main__":
-    # Example usage
-    mongo_db = MongoDbAdapter()
-    data = read_listings(CSV_FILE_PATH)
-
-    print(f"Total documents in collection: {mongo_db.get_total_count()}")
-    mongo_db.reset_database()
-    # #print(f"Total documents in collection: {mongo_db.get_total_count()}")
-    #
-    mongo_db.usecase7_bulk_import(data, 20000)
-    print(f"Starting to create indexes...")
-    timer = datetime.now()
-    mongo_db.create_indexes()
-    print(f"Indexes created in {datetime.now() - timer}")
-    #
-    # print(f"Total documents in collection: {mongo_db.get_total_count()}")
-    #
-    filtered_properties = mongo_db.usecase1_filter_properties(min_listings=10, max_price=250000)
-    print(f"Filtered properties: {len(filtered_properties)} found")
-    mongo_db.__del__()
-    #
-    # # # Clean up
-    # # mongo_db.reset_database()
