@@ -78,10 +78,10 @@ def monitor_container_stats_threaded(container_name, stop_event, stats_list, pol
         try:
             cmd = [
                 "docker", "stats", "--no-stream",
-                "--format", "{{.json .}}",
+                "--format", "'{{json .}}'",
                 container_name
             ]
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True, encoding='utf-8')
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
             stdout, stderr = process.communicate(timeout=polling_interval + 1)  # Timeout slightly larger than interval
 
             if process.returncode == 0 and stdout.strip():
