@@ -40,8 +40,10 @@ DATABASES = [
 # Polling interval (seconds) for Docker stats
 POLL_INTERVAL = 1.0
 
-# Where to append results
-RESULTS_FILE = os.path.join(os.path.dirname(__file__), "benchmark_results.jsonl")
+# Directory and filename prefix for results
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+RESULTS_DIR = SCRIPT_DIR  # Can change to a subfolder if desired
+RESULTS_PREFIX = "benchmark_results"  # final files will be: benchmark_results_postgres.jsonl, etc.
 
 
 # --- Helper: Load a class from a .py file by name ---
@@ -50,11 +52,9 @@ def load_class_from_file(py_filename_stem: str, class_name: str):
     Dynamically load `class_name` from `<py_filename_stem>.py` located in this script's folder.
     Returns the class object, or exits if not found.
     """
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    file_path = os.path.join(script_dir, py_filename_stem + ".py")
-
+    file_path = os.path.join(SCRIPT_DIR, py_filename_stem + ".py")
     if not os.path.exists(file_path):
-        print(f"Error: Cannot find `{py_filename_stem}.py` in {script_dir}")
+        print(f"Error: Cannot find `{py_filename_stem}.py` in {SCRIPT_DIR}")
         sys.exit(1)
 
     spec = importlib.util.spec_from_file_location(py_filename_stem, file_path)
@@ -120,7 +120,7 @@ def monitor_container(container_name: str, stop_event: threading.Event, samples:
                 "blkio_bytes": blkio_total
             })
 
-        except Exception as e:
+        except Exception:
             # If stats failed, still record a marker (all zeroes) so summary knows we had an attempt
             samples.append({
                 "timestamp": time.time(),
@@ -136,19 +136,19 @@ def monitor_container(container_name: str, stop_event: threading.Event, samples:
             time.sleep(0.1)
 
 
-# --- Helper: Summarize a list of samples into avg/peak for CPU, RAM, and total blkio delta ---
+# --- Helper: Summarize a list of samples into avg/peak for CPU, RAM, and total blkio delta (in MiB) ---
 def summarize(samples: list):
     """
     Given a list of samples with keys:
        {timestamp, cpu_percent, mem_mb, blkio_bytes}
     returns a dict with:
-       avg_cpu, peak_cpu, avg_mem, peak_mem, total_blkio, samples_count.
+       avg_cpu, peak_cpu, avg_mem, peak_mem, total_blkio_mb, samples_count.
     """
     if not samples:
         return {
             "avg_cpu": 0.0, "peak_cpu": 0.0,
             "avg_mem": 0.0, "peak_mem": 0.0,
-            "total_blkio": 0,
+            "total_blkio_mb": 0.0,
             "samples": 0
         }
 
@@ -163,16 +163,28 @@ def summarize(samples: list):
 
     # The container’s blkio counter is cumulative, so “total delta” =
     #   last value – first value
-    total_blkio = max(blkio_vals) - min(blkio_vals)
+    total_blkio_bytes = max(blkio_vals) - min(blkio_vals)
+    total_blkio_mb = total_blkio_bytes / (1024 ** 2)
 
     return {
         "avg_cpu": round(avg_cpu, 2),
         "peak_cpu": round(peak_cpu, 2),
         "avg_mem": round(avg_mem, 2),
         "peak_mem": round(peak_mem, 2),
-        "total_blkio": total_blkio,
+        "total_blkio_mb": round(total_blkio_mb, 2),
         "samples": len(samples)
     }
+
+
+# --- Utility: Count existing lines in a file ---
+def count_lines(path: str) -> int:
+    if not os.path.exists(path):
+        return 0
+    count = 0
+    with open(path, "r", encoding="utf-8") as f:
+        for _ in f:
+            count += 1
+    return count
 
 
 # --- Main Benchmarking Logic ---
@@ -185,7 +197,6 @@ def main():
         print(f"Details: {e}")
         sys.exit(1)
 
-    results = []
     run_id = datetime.utcnow().isoformat()
 
     for db in DATABASES:
@@ -211,8 +222,18 @@ def main():
 
         print(f"Found usecases: {usecases}")
 
+        # Prepare per-database results file
+        db_results_file = os.path.join(RESULTS_DIR, f"{RESULTS_PREFIX}_{key}.jsonl")
+        os.makedirs(os.path.dirname(db_results_file), exist_ok=True)
+        existing_count = count_lines(db_results_file)
+        next_index = existing_count + 1
+
+        # Collect entries for this database
+        db_entries = []
+
         for method_name in usecases:
             print(f"→ Running {method_name} ...", end="", flush=True)
+
             # 3) Start background thread to collect stats
             samples = []
             stop_event = threading.Event()
@@ -243,8 +264,9 @@ def main():
             # 6) Summarize stats
             stats_summary = summarize(samples)
 
-            # 7) Record a single JSON line
+            # 7) Build entry with enumeration
             entry = {
+                "index": next_index,
                 "run_id": run_id,
                 "database": key,
                 "container": container_name,
@@ -256,18 +278,22 @@ def main():
                 "peak_cpu_percent": stats_summary["peak_cpu"],
                 "avg_mem_mb": stats_summary["avg_mem"],
                 "peak_mem_mb": stats_summary["peak_mem"],
-                "total_blkio_bytes": stats_summary["total_blkio"],
+                "total_blkio_mb": stats_summary["total_blkio_mb"],
                 "samples": stats_summary["samples"],
                 "timestamp_utc": datetime.utcnow().isoformat()
             }
-            results.append(entry)
+            db_entries.append(entry)
 
-            print(f" done. (t={entry['execution_time_s']:.2f}s, "
-                  f"avgCPU={entry['avg_cpu_percent']:.1f}%, "
-                  f"peakCPU={entry['peak_cpu_percent']:.1f}%, "
-                  f"avgMem={entry['avg_mem_mb']:.1f}MiB, "
-                  f"peakMem={entry['peak_mem_mb']:.1f}MiB, "
-                  f"blkio={entry['total_blkio_bytes']}B)")
+            print(
+                f" done. (#{entry['index']}, t={entry['execution_time_s']:.2f}s, "
+                f"avgCPU={entry['avg_cpu_percent']:.1f}%, "
+                f"peakCPU={entry['peak_cpu_percent']:.1f}%, "
+                f"avgMem={entry['avg_mem_mb']:.1f}MiB, "
+                f"peakMem={entry['peak_mem_mb']:.1f}MiB, "
+                f"blkio={entry['total_blkio_mb']:.1f}MiB)"
+            )
+
+            next_index += 1
 
         # 8) If the adapter has a close() method, call it
         if hasattr(adapter, "close"):
@@ -276,13 +302,14 @@ def main():
             except Exception:
                 pass
 
-    # 9) Append all results to the JSONL file
-    os.makedirs(os.path.dirname(RESULTS_FILE), exist_ok=True)
-    with open(RESULTS_FILE, "a", encoding="utf-8") as f:
-        for obj in results:
-            f.write(json.dumps(obj) + "\n")
+        # 9) Append this database’s entries to its JSONL file
+        with open(db_results_file, "a", encoding="utf-8") as f:
+            for obj in db_entries:
+                f.write(json.dumps(obj) + "\n")
 
-    print(f"\nAll done. {len(results)} entries appended to {RESULTS_FILE}.")
+        print(f"→ {len(db_entries)} entries appended to {db_results_file}.")
+
+    print("\nAll databases processed.")
 
 
 if __name__ == "__main__":
