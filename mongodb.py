@@ -293,7 +293,7 @@ class MongoDb(Usecases):
             print(f"Error in usecase6_filter_by_bedrooms_and_size: {e}")
             return []
     @override
-    def usecase7_batch_import(self, data: Iterable[ListingRecord], batch_size: int = 1000) -> None:
+    def usecase7_bulk_import(self, data: Iterable[ListingRecord], batch_size: int = 1000) -> None:
         """
         Use Case 7: Batch import all real estate data from ListingRecord objects.
         Handles both single inserts and bulk operations for performance comparison.
@@ -450,17 +450,25 @@ if __name__ == "__main__":
     # Example usage
     mongo_db = MongoDb()
     data = read_listings(CSV_FILE_PATH)
+    # Amount of data to be imported (data is an Iterable)
+    r = 0
+
 
     print(f"Total documents in collection: {mongo_db.get_total_count()}")
     mongo_db.reset_database()
-    #print(f"Total documents in collection: {mongo_db.get_total_count()}")
-
-    mongo_db.usecase7_batch_import(data)
-
-
+    # #print(f"Total documents in collection: {mongo_db.get_total_count()}")
+    #
+    mongo_db.usecase7_bulk_import(data, 20000)
+    print(f"Starting to create indexes...")
+    timer = datetime.now()
+    mongo_db.create_indexes()
+    print(f"Indexes created in {datetime.now() - timer}")
+    #
+    # print(f"Total documents in collection: {mongo_db.get_total_count()}")
+    #
     filtered_properties = mongo_db.usecase1_filter_properties(min_listings=10, max_price=250000)
     print(f"Filtered properties: {len(filtered_properties)} found")
     mongo_db.__del__()
-
-    # # Clean up
-    # mongo_db.reset_database()
+    #
+    # # # Clean up
+    # # mongo_db.reset_database()

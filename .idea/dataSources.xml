@@ -8,11 +8,11 @@
       <jdbc-url>jdbc:postgresql://152.53.248.27:5432/postgres</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
-    <data-source source="LOCAL" name="@152.53.248.27" uuid="96e41dcd-2385-40e6-b50a-9c0d3ec322f4">
+    <data-source source="LOCAL" name="default@152.53.248.27" uuid="96e41dcd-2385-40e6-b50a-9c0d3ec322f4">
       <driver-ref>clickhouse</driver-ref>
       <synchronize>true</synchronize>
-      <jdbc-driver>com.clickhouse.jdbc.ClickHouseDriver</jdbc-driver>
-      <jdbc-url>jdbc:clickhouse://152.53.248.27:8123</jdbc-url>
+      <jdbc-driver>ru.yandex.clickhouse.ClickHouseDriver</jdbc-driver>
+      <jdbc-url>jdbc:clickhouse://152.53.248.27:8123/default</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
     <data-source source="LOCAL" name="@152.53.248.27 [2]" uuid="65a009ff-bf0d-42cd-80dd-c578193087be">
@@ -27,6 +27,14 @@
       <synchronize>true</synchronize>
       <jdbc-driver>org.mariadb.jdbc.Driver</jdbc-driver>
       <jdbc-url>jdbc:mariadb://argumentmining.ddns.net:3306/argument-mining</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+    <data-source source="LOCAL" name="pawtner@localhost" uuid="dcb532ab-ea41-46a4-ac7f-19fe3d1abbd1">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <remarks>Arbeit</remarks>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://localhost:5432/pawtner</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>

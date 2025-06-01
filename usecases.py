@@ -89,7 +89,7 @@ class Usecases(ABC):
         ...
 
     @abstractmethod
-    def usecase7_batch_import(
+    def usecase7_bulk_import(
         self,
         data: Iterable[ListingRecord],
         batch_size: int = 1000
