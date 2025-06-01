@@ -523,12 +523,13 @@ class PostgresAdapter(Usecases):
         city: str = DEFAULT_CITY
     ) -> Dict[str, List[Dict[str, Any]]]:
 
-        if not isinstance(postal_code, int):
-            raise ValueError("postal_code must be an integer.")
+
         if not isinstance(below_avg_pct, (int, float)) or not (0 < below_avg_pct < 1):
             raise ValueError("below_avg_pct must be a float between 0 and 1 (exclusive).")
         if not isinstance(city, str) or not city.strip():
             raise ValueError("city must be a non-empty string.")
+
+        postal_code = int(float(postal_code.strip()))
 
         self._validate_zip_code_exists(postal_code)
         self._validate_city_exists(city)

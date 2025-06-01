@@ -6,13 +6,13 @@ from ListingRecord import ListingRecord, read_listings
 # --- Define Sensible Default Values for Benchmarks ---
 # These can be adjusted as needed for your standard benchmark scenarios
 DEFAULT_MIN_LISTINGS = 10
-DEFAULT_MAX_PRICE = 300000.0
-DEFAULT_BROKER_ID = "16598.00"  # Example, ensure this ID is relevant to your test data
+DEFAULT_MAX_PRICE = 250000.0
+DEFAULT_BROKER_ID = "22611.00"  # Example, ensure this ID is relevant to your test data
 DEFAULT_PERCENT_DELTA = 0.05 # 5% increase
 DEFAULT_LIMIT = 100
-DEFAULT_POSTAL_CODE = "602" # Example, use a relevant postal code from your test data
+DEFAULT_POSTAL_CODE = "33993" # Example, use a relevant postal code from your test data
 DEFAULT_BELOW_AVG_PCT = 0.10 # 10% below average
-DEFAULT_CITY = "Aguada"      # Example, use a relevant city from your test data
+DEFAULT_CITY = "Matlacha"      # Example, use a relevant city from your test data
 DEFAULT_MIN_BEDROOMS = 2
 DEFAULT_MAX_SIZE_SQM = 150.0
 DEFAULT_BATCH_SIZE = 20000
