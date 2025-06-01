@@ -12,7 +12,7 @@ from ListingRecord import ListingRecord, read_listings
 from usecases import Usecases
 
 # Configuration
-DB_DSN = "postgresql://mds:mds@152.53.248.27:5432/postgres"  # Standard DSN for psycopg2
+DB_DSN = "postgresql://mds:mds@localhost:5432/postgres"  # Standard DSN for psycopg2
 logger = logging.getLogger(__name__)
 # Configure logging
 logging.basicConfig(

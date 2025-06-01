@@ -9,7 +9,7 @@ from ListingRecord import ListingRecord, read_listings
 from usecases import Usecases
 
 # --- Configuration ---
-MONGO_URI = "mongodb://152.53.248.27:27020"
+MONGO_URI = "mongodb://localhost:27020"
 DATABASE_NAME = "real_estate_db"
 COLLECTION_NAME = "listings"
 CSV_FILE_PATH = "transformed_real_estate_data.csv"

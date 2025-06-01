@@ -10,8 +10,8 @@ from usecases import Usecases
 
 
 class ClickHouseAdapter(Usecases):
-    def __init__(self, host: str = 'localhost', port: int = 8123, database: str = 'default', user: str = 'default',
-                 password: str = ''):
+    def __init__(self, host: str = 'localhost', port: int = 8123, database: str = 'default', user: str = 'mds',
+                 password: str = 'mds'):
         self.host = host
         self.port = port
         self.database = database

@@ -18,17 +18,17 @@ DATABASE_CONFIG = {
     "postgres": {
         "adapter_file": "postgres",  # Corresponds to postgres.py
         "adapter_class": "PostgresAdapter",
-        "container_name": "postgres",
+        "container_name": "postgres-mds",
     },
     "mongodb": {
         "adapter_file": "mongodb",  # Corresponds to mongodb.py
         "adapter_class": "MongoDbAdapter",
-        "container_name": "mongodb",
+        "container_name": "mongodb-mds",
     },
     "clickhouse": {
         "adapter_file": "clickhouse",  # Corresponds to clickhouse.py
         "adapter_class": "ClickHouseAdapter",
-        "container_name": "clickhouse",
+        "container_name": "clickhouse-mds",
     },
 }
 
@@ -36,7 +36,7 @@ DATABASE_CONFIG = {
 RESULTS_FILE = "benchmark_results.jsonl"
 
 # Prefix for methods in adapter classes that should be run as use cases
-USE_CASE_METHOD_PREFIX = "use_case_"
+USE_CASE_METHOD_PREFIX = "usecase"
 
 # Polling interval for docker stats (in seconds)
 DOCKER_STATS_POLLING_INTERVAL = 1.0
