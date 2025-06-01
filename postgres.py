@@ -24,7 +24,7 @@ logging.basicConfig(
 CSV_FILE_PATH = "transformed_real_estate_data.csv"
 
 
-class PostgresUsecases(Usecases):
+class PostgresAdapter(Usecases):
     def __init__(self, db_params: Optional[Dict[str, Any]] = None):
         if db_params is None:
             self.db_params = {
@@ -978,7 +978,7 @@ class PostgresUsecases(Usecases):
 
 
 if __name__ == "__main__":
-    postgres = PostgresUsecases()
+    postgres = PostgresAdapter()
     print(f"Total count {postgres.get_total_count()}")
 
     data = read_listings(CSV_FILE_PATH)

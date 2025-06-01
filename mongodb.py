@@ -16,7 +16,7 @@ CSV_FILE_PATH = "transformed_real_estate_data.csv"
 BATCH_SIZE = 1000
 
 
-class MongoDb(Usecases):
+class MongoDbAdapter(Usecases):
     def __init__(self):
         """Initialize MongoDB connection and setup collection reference."""
         try:
@@ -461,7 +461,7 @@ class MongoDb(Usecases):
 
 if __name__ == "__main__":
     # Example usage
-    mongo_db = MongoDb()
+    mongo_db = MongoDbAdapter()
     data = read_listings(CSV_FILE_PATH)
 
     print(f"Total documents in collection: {mongo_db.get_total_count()}")
