@@ -6,8 +6,9 @@ from datetime import datetime
 import random
 
 from ListingRecord import ListingRecord, read_listings
-from usecases import Usecases
-
+from usecases import Usecases, DEFAULT_MIN_LISTINGS, DEFAULT_MAX_PRICE, DEFAULT_BROKER_ID, DEFAULT_PERCENT_DELTA, \
+    DEFAULT_LIMIT, DEFAULT_POSTAL_CODE, DEFAULT_BELOW_AVG_PCT, DEFAULT_CITY, DEFAULT_MIN_BEDROOMS, DEFAULT_MAX_SIZE_SQM, \
+    DEFAULT_DATA_FILE_PATH_FOR_IMPORT, DEFAULT_BATCH_SIZE
 # --- Configuration ---
 MONGO_URI = "mongodb://localhost:27020"
 DATABASE_NAME = "real_estate_db"
@@ -48,7 +49,11 @@ class MongoDbAdapter(Usecases):
         except Exception as e:
             print(f"Error ensuring collection exists: {e}")
 
-    def usecase1_filter_properties(self, min_listings: int, max_price: float) -> List[Dict[str, Any]]:
+    def usecase1_filter_properties(
+        self,
+        min_listings: int = DEFAULT_MIN_LISTINGS,
+        max_price: float = DEFAULT_MAX_PRICE
+    ) -> List[Dict[str, Any]]:
         """
         Use Case 1: Find cities with more than min_listings properties and price under max_price.
         Returns: List of matching property documents.
@@ -88,7 +93,12 @@ class MongoDbAdapter(Usecases):
             print(f"Error in usecase1_filter_properties: {e}")
             return []
 
-    def usecase2_update_prices(self, broker_id: str, percent_delta: float, limit: int) -> int:
+    def usecase2_update_prices(
+        self,
+        broker_id: str = DEFAULT_BROKER_ID,
+        percent_delta: float = DEFAULT_PERCENT_DELTA,
+        limit: int = DEFAULT_LIMIT
+    ) -> int:
         """
         Use Case 2: Update prices by percent_delta for first limit properties of the same broker.
         Returns: Number of updated documents.
@@ -163,8 +173,13 @@ class MongoDbAdapter(Usecases):
             print(f"Error in usecase3_add_solar_panels: {e}")
             return 0
 
-    def usecase4_price_analysis(self, postal_code: str, below_avg_pct: float, city: str) -> Dict[
-        str, List[Dict[str, Any]]]:
+    def usecase4_price_analysis(
+        self,
+        postal_code: str = DEFAULT_POSTAL_CODE,
+        below_avg_pct: float = DEFAULT_BELOW_AVG_PCT,
+        city: str = DEFAULT_CITY
+    ) -> Dict[str, List[Dict[str, Any]]]:
+
         """
         Use Case 4:
         1. Find properties in postal_code that are below_avg_pct under local avg price per sqm
@@ -289,7 +304,11 @@ class MongoDbAdapter(Usecases):
             print(f"Error in usecase5_average_price_per_city: {e}")
             return {}
 
-    def usecase6_filter_by_bedrooms_and_size(self, min_bedrooms: int, max_size: float) -> List[Dict[str, Any]]:
+    def usecase6_filter_by_bedrooms_and_size(
+        self,
+        min_bedrooms: int = DEFAULT_MIN_BEDROOMS,
+        max_size: float = DEFAULT_MAX_SIZE_SQM
+    ) -> List[Dict[str, Any]]:
         """
         Use Case 6: Find properties with more than min_bedrooms and size less than max_size.
         Returns: List of matching documents.
@@ -306,7 +325,11 @@ class MongoDbAdapter(Usecases):
             print(f"Error in usecase6_filter_by_bedrooms_and_size: {e}")
             return []
     @override
-    def usecase7_bulk_import(self, data: Iterable[ListingRecord], batch_size: int = 1000) -> None:
+    def usecase7_bulk_import(
+        self,
+        data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),
+        batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> None:
         """
         Use Case 7: Batch import all real estate data from ListingRecord objects.
         Handles both single inserts and bulk operations for performance comparison.

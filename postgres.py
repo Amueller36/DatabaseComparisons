@@ -9,7 +9,9 @@ import psycopg2
 import psycopg2.extras
 
 from ListingRecord import ListingRecord, read_listings
-from usecases import Usecases
+from usecases import Usecases, DEFAULT_MIN_LISTINGS, DEFAULT_MAX_PRICE, DEFAULT_BROKER_ID, DEFAULT_PERCENT_DELTA, \
+    DEFAULT_LIMIT, DEFAULT_POSTAL_CODE, DEFAULT_BELOW_AVG_PCT, DEFAULT_CITY, DEFAULT_MIN_BEDROOMS, DEFAULT_MAX_SIZE_SQM, \
+    DEFAULT_DATA_FILE_PATH_FOR_IMPORT, DEFAULT_BATCH_SIZE
 
 # Configuration
 DB_DSN = "postgresql://mds:mds@localhost:5432/postgres"  # Standard DSN for psycopg2
@@ -420,7 +422,11 @@ class PostgresAdapter(Usecases):
         if not self._execute_query(query, (city,), fetch_one=True):
             raise ValueError(f"City '{city}' not found.")
 
-    def usecase1_filter_properties(self, min_listings: int, max_price: float) -> List[Dict[str, Any]]:
+    def usecase1_filter_properties(
+        self,
+        min_listings: int = DEFAULT_MIN_LISTINGS,
+        max_price: float = DEFAULT_MAX_PRICE
+    ) -> List[Dict[str, Any]]:
         if not isinstance(min_listings, int) or min_listings < 0:
             raise ValueError("min_listings must be a non-negative integer.")
         if not isinstance(max_price, (int, float)) or max_price < 0:
@@ -451,7 +457,12 @@ class PostgresAdapter(Usecases):
         """
         return self._execute_query(query, (max_price, min_listings), fetch_all=True)
 
-    def usecase2_update_prices(self, broker_id: str, percent_delta: float, limit: int) -> int:
+    def usecase2_update_prices(
+        self,
+        broker_id: str = DEFAULT_BROKER_ID,
+        percent_delta: float = DEFAULT_PERCENT_DELTA,
+        limit: int = DEFAULT_LIMIT
+    ) -> int:
 
         if not isinstance(percent_delta, (int, float)):  # e.g. 0.05 for +5%, -0.1 for -10%
             raise ValueError("percent_delta must be a number.")
@@ -504,8 +515,13 @@ class PostgresAdapter(Usecases):
             # Potentially re-raise or handle more gracefully
             raise
 
-    def usecase4_price_analysis(self, postal_code: int, below_avg_pct: float, city: str) -> Dict[
-        str, List[Dict[str, Any]]]:
+    def usecase4_price_analysis(
+        self,
+        postal_code: str = DEFAULT_POSTAL_CODE,
+        below_avg_pct: float = DEFAULT_BELOW_AVG_PCT,
+        city: str = DEFAULT_CITY
+    ) -> Dict[str, List[Dict[str, Any]]]:
+
         if not isinstance(postal_code, int):
             raise ValueError("postal_code must be an integer.")
         if not isinstance(below_avg_pct, (int, float)) or not (0 < below_avg_pct < 1):
@@ -577,7 +593,11 @@ class PostgresAdapter(Usecases):
         results = self._execute_query(query, fetch_all=True)
         return {row['city']: float(row['avg_price_per_unit_area']) for row in results}
 
-    def usecase6_filter_by_bedrooms_and_size(self, min_bedrooms: int, max_size: float) -> List[Dict[str, Any]]:
+    def usecase6_filter_by_bedrooms_and_size(
+        self,
+        min_bedrooms: int = DEFAULT_MIN_BEDROOMS,
+        max_size: float = DEFAULT_MAX_SIZE_SQM
+    ) -> List[Dict[str, Any]]:
         if not isinstance(min_bedrooms, int) or min_bedrooms < 0:
             raise ValueError("min_bedrooms must be a non-negative integer.")
         if not isinstance(max_size, (int, float)) or max_size <= 0:
@@ -598,7 +618,11 @@ class PostgresAdapter(Usecases):
         """
         return self._execute_query(query, (min_bedrooms, max_size), fetch_all=True)
 
-    def usecase7_bulk_import(self, data: Iterable[ListingRecord], batch_size: int = 1000) -> int:
+    def usecase7_bulk_import(
+        self,
+        data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),
+        batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> None:
         if not isinstance(batch_size, int) or batch_size <= 0:
             raise ValueError("batch_size must be a positive integer.")
 

@@ -1,12 +1,14 @@
 import uuid
 from copy import copy
 from datetime import datetime, timezone
-from typing import Iterable, List, Dict, Any, Optional
+from typing import Iterable, List, Dict, Any, Optional, override
 
 import clickhouse_connect
 
 from ListingRecord import ListingRecord, read_listings
-from usecases import Usecases
+from usecases import Usecases, DEFAULT_MIN_LISTINGS, DEFAULT_MAX_PRICE, DEFAULT_BROKER_ID, DEFAULT_PERCENT_DELTA, \
+    DEFAULT_LIMIT, DEFAULT_POSTAL_CODE, DEFAULT_BELOW_AVG_PCT, DEFAULT_CITY, DEFAULT_MIN_BEDROOMS, DEFAULT_MAX_SIZE_SQM, \
+    DEFAULT_DATA_FILE_PATH_FOR_IMPORT, DEFAULT_BATCH_SIZE
 
 
 class ClickHouseAdapter(Usecases):
@@ -107,7 +109,8 @@ class ClickHouseAdapter(Usecases):
             print(f"Failed to reset database (truncate table {self.fq_table_name}): {e}")
             raise
 
-    def usecase1_filter_properties(self, min_listings: int, max_price: float) -> List[Dict[str, Any]]:
+    @override
+    def usecase1_filter_properties(self, min_listings: int = DEFAULT_MIN_LISTINGS, max_price: float= DEFAULT_MAX_PRICE) -> List[Dict[str, Any]]:
         client = self._get_client()
         query = f"""
         SELECT *
@@ -128,7 +131,12 @@ class ClickHouseAdapter(Usecases):
             print(f"Usecase 1 error: {e}")
             raise
 
-    def usecase2_update_prices(self, broker_id: str, percent_delta: float, limit: int) -> int:
+    def usecase2_update_prices(
+        self,
+        broker_id: str = DEFAULT_BROKER_ID,
+        percent_delta: float = DEFAULT_PERCENT_DELTA,
+        limit: int = DEFAULT_LIMIT
+    ) -> int:
         client = self._get_client()
         if limit <= 0:
             return 0
@@ -195,7 +203,12 @@ class ClickHouseAdapter(Usecases):
             raise
 
 
-    def usecase4_price_analysis(self, postal_code: str, below_avg_pct: float, city: str) -> Dict[str, List[Dict[str, Any]]]:
+    def usecase4_price_analysis(
+        self,
+        postal_code: str = DEFAULT_POSTAL_CODE,
+        below_avg_pct: float = DEFAULT_BELOW_AVG_PCT,
+        city: str = DEFAULT_CITY
+    ) -> Dict[str, List[Dict[str, Any]]]:
         client = self._get_client()
         results: Dict[str, List[Dict[str, Any]]] = {"below_threshold": [], "sorted_by_city": []}
 
@@ -266,7 +279,11 @@ class ClickHouseAdapter(Usecases):
             print(f"Usecase 5 error: {e}")
             raise
 
-    def usecase6_filter_by_bedrooms_and_size(self, min_bedrooms: int, max_size: float) -> List[Dict[str, Any]]:
+    def usecase6_filter_by_bedrooms_and_size(
+        self,
+        min_bedrooms: int = DEFAULT_MIN_BEDROOMS,
+        max_size: float = DEFAULT_MAX_SIZE_SQM
+    ) -> List[Dict[str, Any]]:
         client = self._get_client()
         query = f"""
         SELECT * FROM {self.table_name}
@@ -279,7 +296,11 @@ class ClickHouseAdapter(Usecases):
             print(f"Usecase 6 error: {e}")
             raise
 
-    def usecase7_bulk_import(self, data: Iterable[ListingRecord], batch_size: int = 1000) -> None:
+    def usecase7_bulk_import(
+        self,
+        data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),
+        batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> None:
         client = self._get_client()
         column_names = [
             'id', 'brokered_by', 'status', 'price', 'lot_size_sqm', 'street',
