@@ -49,7 +49,17 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
                 df["prev_sold_date"] = pd.NaT
 
                 # NaT-Werte (ursprüngliche Fehler oder pre-1970 Daten) in leere Strings umwandeln für CSV
-        df["prev_sold_date"] = df["prev_sold_date"].where(df["prev_sold_date"].notna(), "")
+        default_datetime_str = "1970-01-01"
+        # Fill invalid/missing dates with the default ClickHouse-safe value
+
+        df["prev_sold_date"] = df["prev_sold_date"].where(
+            df["prev_sold_date"].notna(),
+            default_datetime_str
+        )
+        df["prev_sold_date"] = df["prev_sold_date"].dt.strftime("%Y-%m-%d")
+
+
+
     else:
         # If prev_sold_date is missing, create it as empty strings to maintain column structure
         # if it's expected in the output CSV schema. ListingRecord handles it as Optional.
