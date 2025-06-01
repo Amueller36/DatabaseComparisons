@@ -451,15 +451,15 @@ class PostgresAdapter(Usecases):
         """
         return self._execute_query(query, (max_price, min_listings), fetch_all=True)
 
-    def usecase2_update_prices(self, broker_id: int, percent_delta: float, limit: int) -> int:
-        if not isinstance(broker_id, int):
-            raise ValueError("broker_id must be an integer.")
+    def usecase2_update_prices(self, broker_id: str, percent_delta: float, limit: int) -> int:
+
         if not isinstance(percent_delta, (int, float)):  # e.g. 0.05 for +5%, -0.1 for -10%
             raise ValueError("percent_delta must be a number.")
         if percent_delta <= -1.0:
             raise ValueError("percent_delta cannot be -1.0 or less (price cannot be zero or negative).")
         if not isinstance(limit, int) or limit <= 0:
             raise ValueError("limit must be a positive integer.")
+        broker_id = int(float(broker_id))
 
         self._validate_broker_exists(broker_id)
 
