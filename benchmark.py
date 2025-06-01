@@ -78,19 +78,22 @@ def monitor_container_stats_threaded(container_name, stop_event, stats_list, pol
         try:
             cmd = [
                 "docker", "stats", "--no-stream",
-                "--format", "{{.Name}},{{.CPUPerc}},{{.MemUsage}}",
+                "--format", "{{.json .}}",
                 container_name
             ]
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True, encoding='utf-8')
             stdout, stderr = process.communicate(timeout=polling_interval + 1)  # Timeout slightly larger than interval
 
             if process.returncode == 0 and stdout.strip():
-                name, cpu_perc_str, mem_usage_str = stdout.strip().split(',')
-
+                stats_data = json.loads(stdout.strip())  # Parse JSON
+                name = stats_data.get("Name")
                 if name != container_name:
+                    # This case should ideally not happen if docker stats targets by name/ID correctly
                     print(f"Warning: Stats received for '{name}' instead of '{container_name}'. Skipping this sample.")
-                    # Do not add error sample here, just skip.
                 else:
+                    cpu_perc_str = stats_data.get("CPUPerc", "0.0%")  # Default to prevent key error
+                    mem_usage_str = stats_data.get("MemUsage", "0B / 0B")  # Default to prevent key error
+
                     cpu_perc = 0.0
                     if cpu_perc_str != "--" and cpu_perc_str:
                         try:
