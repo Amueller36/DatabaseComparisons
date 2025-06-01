@@ -22,6 +22,7 @@ class MongoDb(Usecases):
         try:
             self.client = MongoClient(MONGO_URI)
             self.db = self.client[DATABASE_NAME]
+            self.ensure_collection_exists(COLLECTION_NAME)
             self.collection = self.db[COLLECTION_NAME]
             # Test connection
             self.client.admin.command('ping')
@@ -34,6 +35,18 @@ class MongoDb(Usecases):
         """Clean up MongoDB connection."""
         if hasattr(self, 'client'):
             self.client.close()
+
+    def ensure_collection_exists(self, collection_name: str) -> None:
+        """Ensure that a collection exists; create if not."""
+        try:
+            if collection_name not in self.db.list_collection_names():
+                # Optional: You can set options here, e.g., capped, max size, etc.
+                self.db.create_collection(collection_name)
+                print(f"Collection '{collection_name}' created.")
+            else:
+                print(f"Collection '{collection_name}' already exists.")
+        except Exception as e:
+            print(f"Error ensuring collection exists: {e}")
 
     def usecase1_filter_properties(self, min_listings: int, max_price: float) -> List[Dict[str, Any]]:
         """
@@ -402,8 +415,8 @@ class MongoDb(Usecases):
         Delete all entries in the database.
         """
         try:
-            result = self.collection.delete_many({})
-            print(f"Deleted {result.deleted_count} documents from the database")
+            result = self.collection.drop()
+            print(f"Deleted All documents from the database")
         except Exception as e:
             print(f"Error in reset_database: {e}")
 
@@ -450,9 +463,6 @@ if __name__ == "__main__":
     # Example usage
     mongo_db = MongoDb()
     data = read_listings(CSV_FILE_PATH)
-    # Amount of data to be imported (data is an Iterable)
-    r = 0
-
 
     print(f"Total documents in collection: {mongo_db.get_total_count()}")
     mongo_db.reset_database()
