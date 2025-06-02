@@ -34,36 +34,23 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # 3) Datum konvertieren (prev_sold_date)
     if "prev_sold_date" in df.columns:
+        # 1) parse to datetime (invalid → NaT)
         df["prev_sold_date"] = pd.to_datetime(df["prev_sold_date"], errors="coerce")
 
-        # Ungültige Daten (pre-1970) zu NaT konvertieren
-        if not df["prev_sold_date"].empty:
-            # Ensure the column is actually of datetime type before using .dt accessor
-            if pd.api.types.is_datetime64_any_dtype(df["prev_sold_date"]):
-                pre_1970_mask = df["prev_sold_date"].dt.year < 1970
-                # Set pre-1970 dates to NaT
-                df.loc[pre_1970_mask, "prev_sold_date"] = pd.NaT
-            else:
-                # If after to_datetime it's still not a datetime (e.g. all NaT became object)
-                # treat all as NaT for safety, though to_datetime should handle this.
-                df["prev_sold_date"] = pd.NaT
+        # 2) set anything pre-1970 to NaT
+        if pd.api.types.is_datetime64_any_dtype(df["prev_sold_date"]):
+            pre_1970_mask = df["prev_sold_date"].dt.year < 1970
+            df.loc[pre_1970_mask, "prev_sold_date"] = pd.NaT
 
-                # NaT-Werte (ursprüngliche Fehler oder pre-1970 Daten) in leere Strings umwandeln für CSV
-        default_datetime_str = "1970-01-01"
-        # Fill invalid/missing dates with the default ClickHouse-safe value
-
-        df["prev_sold_date"] = df["prev_sold_date"].where(
-            df["prev_sold_date"].notna(),
-            default_datetime_str
-        )
-        df["prev_sold_date"] = df["prev_sold_date"].dt.strftime("%Y-%m-%d")
-
-
+        # 3) leave NaT as NaT (we want None in ListingRecord later, not "1970-01-01")
+        # So do NOT fill with a default string.  Instead, output blank so ListingRecord knows
+        # to store None.
+        df["prev_sold_date"] = df["prev_sold_date"].dt.date.astype("object")
+        # → This converts valid dates to Python date objects, and NaT → None/NaN.
 
     else:
-        # If prev_sold_date is missing, create it as empty strings to maintain column structure
-        # if it's expected in the output CSV schema. ListingRecord handles it as Optional.
-        df["prev_sold_date"] = ""
+        df["prev_sold_date"] = pd.NA  # so that ListingRecord eventually sees None
+
 
     # 4) Erforderliche Spalten validieren und ungültige Zeilen entfernen
     #    Diese Spezifikationen basieren auf den Pflichtfeldern von ListingRecord.

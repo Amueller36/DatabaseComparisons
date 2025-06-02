@@ -85,7 +85,6 @@ class ClickHouseAdapter(Usecases):
             bath Nullable(Int16),
             house_size_sqm Nullable(Float64),
             prev_sold_date Nullable(DateTime),
-            solar_panels Nullable(UInt8) DEFAULT NULL -- Add solar_panels here for Usecase 3
         ) ENGINE = MergeTree()
         ORDER BY (city, zip_code, id)
         """
@@ -178,11 +177,23 @@ class ClickHouseAdapter(Usecases):
 
     def usecase3_add_solar_panels(self) -> int:
         client = self._get_client()
-        # Using modulo function for robust parsing, as fixed previously
+
+        # 1) Add the new column if it doesn’t already exist
+        add_column_query = f"""
+        ALTER TABLE {self.fq_table_name}
+        ADD COLUMN IF NOT EXISTS solar_panels Nullable(UInt8) DEFAULT NULL
+        """
+        try:
+            client.command(add_column_query, settings={'mutations_sync': 1})
+        except Exception as e:
+            print(f"Usecase 3 (add column) error: {e}")
+            raise
+
+        # 2) Populate the column (0 or 1) for every existing row
         update_column_query = f"""
         ALTER TABLE {self.fq_table_name}
         UPDATE solar_panels = modulo(rand(), 2)
-        WHERE 1 = 1 
+        WHERE 1 = 1
         """
         try:
             client.command(update_column_query, settings={'mutations_sync': 1})
@@ -190,11 +201,11 @@ class ClickHouseAdapter(Usecases):
             print(f"Usecase 3 (update column) error: {e}")
             raise
 
+        # 3) Return how many rows we now have in the table
         count_query = f"SELECT count() FROM {self.table_name}"
         try:
             query_result = client.query(count_query)
             total_rows = 0
-            # Extract scalar from result_rows
             if query_result.result_rows and query_result.result_rows[0] and query_result.result_rows[0][0] is not None:
                 total_rows = query_result.result_rows[0][0]
             return total_rows
@@ -330,7 +341,7 @@ class ClickHouseAdapter(Usecases):
                 if isinstance(prev_sold, datetime):
                     # Ensure datetime is naive or convert to UTC if timezone-aware
                     if prev_sold.tzinfo is not None and prev_sold.tzinfo.utcoffset(prev_sold) is not None:
-                        prev_sold = prev_sold.astimezone(timezone.utc)
+                        prev_sold = prev_sold.astimezone(timezone.utc).replace(tzinfo=None)
 
                     # Truncate to supported range for ClickHouse DateTime (1970-2106)
                     # and to avoid .timestamp() OSError on some systems (like Windows for pre-1970)
@@ -341,7 +352,7 @@ class ClickHouseAdapter(Usecases):
                     else:
                         try:
                             # Test timestamp conversion. This is where OSError was occurring.
-                            prev_sold.timestamp()
+                            _ = prev_sold.timestamp()
                         except (OSError, ValueError) as e_ts:  # ValueError for e.g. year > 9999
                             print(f"Warning: Timestamp conversion error for prev_sold_date {prev_sold} "
                                   f"at record {processed_count}: {e_ts}. Setting to None.")
@@ -379,5 +390,3 @@ class ClickHouseAdapter(Usecases):
 
     def __del__(self) -> None:
         self.close()
-
-
