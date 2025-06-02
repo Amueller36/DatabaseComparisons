@@ -171,16 +171,36 @@ def main():
         AdapterClass = load_class_from_file(adapter_file, adapter_cls_name)
         adapter = AdapterClass()
 
-        usecases = sorted(
+        # --- Reset the database before running any usecases ---
+        print("→ Resetting database...")
+        if hasattr(adapter, "reset_database"):
+            try:
+                adapter.reset_database()
+                print("   Database reset successfully.")
+            except Exception as e:
+                print(f"   Warning: reset_database() failed: {e}")
+        else:
+            print("   Warning: adapter has no reset_database() method. Skipping reset.")
+
+        # Gather all usecases, but only run from 'usecase7' onward
+        all_usecases = sorted(
             [name for (name, obj) in inspect.getmembers(adapter)
              if inspect.ismethod(obj) and name.startswith("usecase")]
         )
+
+        # Find the index of "usecase7"
+        if "usecase7" in all_usecases:
+            idx = all_usecases.index("usecase7")
+            usecases = all_usecases[idx:]
+        else:
+            print("Warning: 'usecase7' not found. Running all available usecases.")
+            usecases = all_usecases
 
         if not usecases:
             print(f"No usecase...() methods found in {adapter_cls_name}. Skipping.")
             continue
 
-        print(f"Found usecases: {usecases}")
+        print(f"Running usecases: {usecases}")
 
         # Create result filename
         now = datetime.now()
