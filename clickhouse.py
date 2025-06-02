@@ -309,7 +309,7 @@ class ClickHouseAdapter(Usecases):
 
     def usecase7_bulk_import(
             self,
-            data: Iterable[ListingRecord],  # Replace ListingRecord with actual type if different
+            data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),  # Replace ListingRecord with actual type if different
             batch_size: int = DEFAULT_BATCH_SIZE
     ) -> None:
         client = self._get_client()
