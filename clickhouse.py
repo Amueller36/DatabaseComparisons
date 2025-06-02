@@ -309,69 +309,42 @@ class ClickHouseAdapter(Usecases):
 
     def usecase7_bulk_import(
             self,
-            data: Iterable[ListingRecord],  # Replace ListingRecord with actual type if different
+            data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),  # Replace ListingRecord with actual type
             batch_size: int = DEFAULT_BATCH_SIZE
     ) -> None:
-        client = self._get_client()
+        client = self._get_client()  # Make sure this method is defined in your class
         column_names = [
             'id', 'brokered_by', 'status', 'price', 'lot_size_sqm', 'street',
             'city', 'state', 'zip_code', 'bed', 'bath', 'house_size_sqm',
             'prev_sold_date'
         ]
-        try:
-            prev_sold_date_idx = column_names.index('prev_sold_date')
-        except ValueError:
-            print("Critical Error: 'prev_sold_date' not in column_names. Aborting.")  # Console
-            raise
 
         batch: List[tuple] = []
         processed_count = 0
-
-        # --- Debugging Configuration ---
-        debug_start_record_overall = 560000
-        debug_end_record_overall = 620000
-        # debug_sleep_duration = 0.0 # Set to 0 if writing to file, or keep for console progress
-        debug_log_file_path = "prev_sold_date_debug_log.txt"  # Log file name
-        # --- End Debugging Configuration ---
-
-        # Open the debug log file. 'w' for overwrite each run, 'a' to append.
-        # Using a try/finally to ensure it's closed even if errors occur mid-function.
-        debug_file = None
-        if debug_log_file_path:  # Only open if a path is provided
-            try:
-                # Ensure the directory exists if the path includes one (e.g., "logs/debug.txt")
-                # For simplicity here, assuming it's in the current directory or path is simple.
-                # os.makedirs(os.path.dirname(debug_log_file_path), exist_ok=True) # If needed
-                debug_file = open(debug_log_file_path, 'w', encoding='utf-8')
-                print(
-                    f"INFO: Detailed prev_sold_date debug logging will be written to: {debug_log_file_path}")  # Console
-            except IOError as e:
-                print(
-                    f"WARNING: Could not open debug log file {debug_log_file_path}: {e}. Debug logs will go to console.")  # Console
-                debug_file = None  # Fallback to console if file open fails
+        # MIN_YEAR and MAX_YEAR define the valid range for prev_sold_date
+        # Your data conversion script now filters out year 1970 and earlier.
+        # So, MIN_YEAR here should reflect the earliest valid year (e.g., 1971).
+        MIN_ACCEPTABLE_YEAR = 1971
+        MAX_ACCEPTABLE_YEAR = 2105  # Max supported by ClickHouse DateTime is around 2106
 
         try:
-            for record_idx, record in enumerate(data):
-                current_record_global_approx = record_idx + 1
+            for record in data:
                 record_id = uuid.uuid4()
-                MIN_YEAR = 1970
-                MAX_YEAR = 2105
 
                 prev_sold_attr_val = getattr(record, 'prev_sold_date', None)
                 current_prev_sold_to_insert: Optional[datetime] = None
 
                 if isinstance(prev_sold_attr_val, datetime):
-                    current_prev_sold_to_insert = prev_sold_attr_val
-                    if current_prev_sold_to_insert.tzinfo is not None and \
-                            current_prev_sold_to_insert.tzinfo.utcoffset(current_prev_sold_to_insert) is not None:
-                        current_prev_sold_to_insert = current_prev_sold_to_insert.astimezone(timezone.utc).replace(
-                            tzinfo=None)
-                    if current_prev_sold_to_insert.year < MIN_YEAR or current_prev_sold_to_insert.year > MAX_YEAR:
-                        current_prev_sold_to_insert = None
-                elif prev_sold_attr_val is not None:
-                    current_prev_sold_to_insert = None
-                else:
-                    current_prev_sold_to_insert = None
+                    temp_dt = prev_sold_attr_val
+                    # Ensure it's naive UTC if it's timezone-aware
+                    if temp_dt.tzinfo is not None and temp_dt.tzinfo.utcoffset(temp_dt) is not None:
+                        temp_dt = temp_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+                    # Apply year clamping based on your data rules (post-1970 as per last fix)
+                    if MIN_ACCEPTABLE_YEAR <= temp_dt.year <= MAX_ACCEPTABLE_YEAR:
+                        current_prev_sold_to_insert = temp_dt
+                    # else: it remains None, effectively filtering out dates outside the valid range
+                # If prev_sold_attr_val is None or not a datetime, current_prev_sold_to_insert remains None
 
                 record_tuple = (
                     record_id,
@@ -385,179 +358,34 @@ class ClickHouseAdapter(Usecases):
                 batch.append(record_tuple)
 
                 if len(batch) >= batch_size:
-                    actual_processed_this_loop = processed_count + len(batch)
-                    batch_start_record = processed_count + 1
-                    batch_end_record = actual_processed_this_loop
-
-                    perform_debug_logging = False
-                    if max(batch_start_record, debug_start_record_overall) <= min(batch_end_record,
-                                                                                  debug_end_record_overall):
-                        perform_debug_logging = True
-
-                    if perform_debug_logging:
-                        log_target = debug_file if debug_file else print  # Use file if open, else print
-                        header_msg = f"\nDEBUG: Batch Records: {batch_start_record}-{batch_end_record}. Overall (approx): {actual_processed_this_loop}\n"
-                        if debug_file:
-                            debug_file.write(header_msg)
-                        else:
-                            print(header_msg)  # Console for this general batch header
-
-                        for r_idx, r_tuple in enumerate(batch):
-                            psd_val_in_tuple = r_tuple[prev_sold_date_idx]
-                            global_record_num = batch_start_record + r_idx
-                            log_line_parts = [
-                                f"  Global Record ~{global_record_num} (Batch Idx {r_idx}): prev_sold_date='{psd_val_in_tuple}', type={type(psd_val_in_tuple)}"
-                            ]
-                            if isinstance(psd_val_in_tuple, datetime) and psd_val_in_tuple is not None:
-                                try:
-                                    ts = psd_val_in_tuple.timestamp()
-                                    log_line_parts.append(
-                                        f"    timestamp: {ts}, int(timestamp): {int(ts)}{' <<< NEGATIVE!' if ts < 0 else ''}")
-                                except Exception as ts_e:
-                                    log_line_parts.append(f"    Error getting timestamp for {psd_val_in_tuple}: {ts_e}")
-                            elif psd_val_in_tuple is not None:
-                                log_line_parts.append(
-                                    f"    WARNING: prev_sold_date is not None and not datetime: {psd_val_in_tuple} (type: {type(psd_val_in_tuple)})")
-
-                            if debug_file:
-                                debug_file.write("".join(log_line_parts) + "\n")
-                            else:
-                                print("".join(log_line_parts))  # Console
-
-                        footer_msg = "--- End of Debug Log for this Batch ---\n"
-                        if debug_file:
-                            debug_file.write(footer_msg); debug_file.flush()  # Ensure it's written immediately
-                        else:
-                            print(footer_msg)  # Console
-
                     try:
                         client.insert(self.table_name, batch, column_names=column_names)
+                        processed_count += len(batch)
+                        print(f"Inserted batch of {len(batch)} records. Total processed: {processed_count}")
                     except Exception as insert_exc:
                         print(
-                            f"ERROR during client.insert for batch covering records {batch_start_record}-{batch_end_record}.")  # Console
-                        if debug_file:  # Also log error context to file
-                            debug_file.write(
-                                f"\n!!! ERROR during client.insert for batch records {batch_start_record}-{batch_end_record}. See console for full traceback. !!!\n")
-                            debug_file.write("Detailed prev_sold_date values in the failing batch (also on console):\n")
+                            f"ERROR during client.insert for a batch. Processed before this batch: {processed_count}. Batch size: {len(batch)}. Error: {insert_exc}")
+                        raise
+                    finally:
+                        batch = []
 
-                        print("Detailed prev_sold_date values in the failing batch:")  # Console
-                        for r_idx, r_tuple in enumerate(batch):
-                            psd_val_in_tuple = r_tuple[prev_sold_date_idx];
-                            global_record_num = batch_start_record + r_idx
-                            log_line = f"  FAILING BATCH - Global Record ~{global_record_num}: prev_sold_date='{psd_val_in_tuple}', type={type(psd_val_in_tuple)}"
-                            if isinstance(psd_val_in_tuple, datetime) and psd_val_in_tuple is not None:
-                                try:
-                                    ts = psd_val_in_tuple.timestamp(); log_line += f" (ts: {ts}, int(ts): {int(ts)})"
-                                except Exception:
-                                    log_line += " (timestamp error)"
-                            print(log_line)  # Console
-                            if debug_file: debug_file.write(log_line + "\n")
-                        if debug_file: debug_file.flush()
-                        raise insert_exc
-
-                    processed_count += len(batch)
-                    print(f"Inserted batch of {len(batch)} records. Total processed: {processed_count}")  # Console
-                    batch = []
-
-            # Insert any remaining records (final batch)
+            # Insert any remaining records
             if batch:
-                actual_processed_this_loop = processed_count + len(batch)
-                batch_start_record = processed_count + 1
-                batch_end_record = actual_processed_this_loop
-
-                perform_debug_logging = False
-                if max(batch_start_record, debug_start_record_overall) <= min(batch_end_record,
-                                                                              debug_end_record_overall):
-                    perform_debug_logging = True
-
-                if perform_debug_logging:
-                    header_msg = f"\nDEBUG: FINAL Batch Records: {batch_start_record}-{batch_end_record}. Overall (approx): {actual_processed_this_loop}\n"
-                    if debug_file:
-                        debug_file.write(header_msg)
-                    else:
-                        print(header_msg)
-
-                    for r_idx, r_tuple in enumerate(batch):
-                        psd_val_in_tuple = r_tuple[prev_sold_date_idx];
-                        global_record_num = batch_start_record + r_idx
-                        log_line_parts = [
-                            f"  FINAL Global Record ~{global_record_num} (Batch Idx {r_idx}): prev_sold_date='{psd_val_in_tuple}', type={type(psd_val_in_tuple)}"
-                        ]
-                        if isinstance(psd_val_in_tuple, datetime) and psd_val_in_tuple is not None:
-                            try:
-                                ts = psd_val_in_tuple.timestamp(); log_line_parts.append(
-                                    f"    timestamp: {ts}, int(timestamp): {int(ts)}{' <<< NEGATIVE!' if ts < 0 else ''}")
-                            except Exception as ts_e:
-                                log_line_parts.append(f"    Error getting timestamp for {psd_val_in_tuple}: {ts_e}")
-                        elif psd_val_in_tuple is not None:
-                            log_line_parts.append(
-                                f"    WARNING: prev_sold_date is not None and not datetime: {psd_val_in_tuple} (type: {type(psd_val_in_tuple)})")
-
-                        if debug_file:
-                            debug_file.write("".join(log_line_parts) + "\n")
-                        else:
-                            print("".join(log_line_parts))
-
-                    footer_msg = "--- End of Debug Log for FINAL Batch ---\n"
-                    if debug_file:
-                        debug_file.write(footer_msg); debug_file.flush()
-                    else:
-                        print(footer_msg)
-
                 try:
                     client.insert(self.table_name, batch, column_names=column_names)
+                    processed_count += len(batch)
+                    print(f"Inserted final batch of {len(batch)} records. Total processed: {processed_count}")
                 except Exception as insert_exc:
                     print(
-                        f"ERROR during client.insert for FINAL batch covering records {batch_start_record}-{batch_end_record}.")  # Console
-                    if debug_file:
-                        debug_file.write(
-                            f"\n!!! ERROR during client.insert for FINAL batch records {batch_start_record}-{batch_end_record}. See console for full traceback. !!!\n")
-                        debug_file.write(
-                            "Detailed prev_sold_date values in the failing FINAL batch (also on console):\n")
-
-                    print("Detailed prev_sold_date values in the failing FINAL batch:")  # Console
-                    for r_idx, r_tuple in enumerate(batch):
-                        psd_val_in_tuple = r_tuple[prev_sold_date_idx];
-                        global_record_num = batch_start_record + r_idx
-                        log_line = f"  FAILING FINAL BATCH - Global Record ~{global_record_num}: prev_sold_date='{psd_val_in_tuple}', type={type(psd_val_in_tuple)}"
-                        if isinstance(psd_val_in_tuple, datetime) and psd_val_in_tuple is not None:
-                            try:
-                                ts = psd_val_in_tuple.timestamp(); log_line += f" (ts: {ts}, int(ts): {int(ts)})"
-                            except Exception:
-                                log_line += " (timestamp error)"
-                        print(log_line)  # Console
-                        if debug_file: debug_file.write(log_line + "\n")
-                    if debug_file: debug_file.flush()
-                    raise insert_exc
-
-                processed_count += len(batch)
-                print(f"Inserted final batch of {len(batch)} records. Total processed: {processed_count}")  # Console
+                        f"ERROR during client.insert for the final batch. Processed before this batch: {processed_count}. Final batch size: {len(batch)}. Error: {insert_exc}")
+                    raise
+                finally:
+                    batch = []
 
         except Exception as e:
-            current_total_records_processed_before_error = processed_count + len(batch)
             print(
-                f"Usecase 7 (bulk import) error. Records in DB: {processed_count}. Records in current batch: {len(batch)}. Total before error: {current_total_records_processed_before_error}. Error: {e}")  # Console
-            if debug_file:
-                debug_file.write(f"\n!!! Usecase 7 (bulk import) error. See console for full traceback. !!!\n")
-                debug_file.write(
-                    f"Records in DB: {processed_count}. Records in current batch: {len(batch)}. Total before error: {current_total_records_processed_before_error}.\n")
-            if batch:
-                msg_batch_error = "Data in current batch when error occurred (if any):"
-                print(msg_batch_error)  # Console
-                if debug_file: debug_file.write(msg_batch_error + "\n")
-                batch_start_record_on_error = processed_count + 1
-                for r_idx, r_tuple in enumerate(batch):
-                    psd_val_in_tuple = r_tuple[prev_sold_date_idx]
-                    global_record_num = batch_start_record_on_error + r_idx
-                    log_line = f"  Uninserted Batch (Global Record ~{global_record_num}): prev_sold_date='{psd_val_in_tuple}', type={type(psd_val_in_tuple)}"
-                    print(log_line)  # Console
-                    if debug_file: debug_file.write(log_line + "\n")
-                if debug_file: debug_file.flush()
+                f"Usecase 7 (bulk import) failed. Records processed successfully into DB: {processed_count}. Records in current (failed) batch: {len(batch)}. Error: {e}")
             raise
-        finally:
-            if debug_file:
-                print(f"INFO: Closing debug log file: {debug_log_file_path}")  # Console
-                debug_file.close()
 
 
 
