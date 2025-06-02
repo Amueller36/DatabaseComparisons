@@ -14,6 +14,12 @@ import docker  # requires `pip install docker`
 
 DATABASES = [
     {
+        "key": "clickhouse",
+        "adapter_file": "clickhouse",
+        "adapter_class": "ClickHouseAdapter",
+        "container_name": "clickhouse-mds",
+    },
+    {
         "key": "postgres",
         "adapter_file": "postgres",
         "adapter_class": "PostgresAdapter",
@@ -24,12 +30,6 @@ DATABASES = [
         "adapter_file": "mongodb",
         "adapter_class": "MongoDbAdapter",
         "container_name": "mongodb-mds",
-    },
-    {
-        "key": "clickhouse",
-        "adapter_file": "clickhouse",
-        "adapter_class": "ClickHouseAdapter",
-        "container_name": "clickhouse-mds",
     },
 ]
 
@@ -182,29 +182,29 @@ def main():
         else:
             print("   Warning: adapter has no reset_database() method. Skipping reset.")
 
-        # Gather all usecases, but only run from 'usecase7' onward
+        # Gather all usecase methods
         all_usecases = sorted(
             [name for (name, obj) in inspect.getmembers(adapter)
              if inspect.ismethod(obj) and name.startswith("usecase")]
         )
 
-        # Find the index of "usecase7"
-        if "usecase7" in all_usecases:
-            idx = all_usecases.index("usecase7")
-            usecases = all_usecases[idx:]
+        # Ensure 'usecase7' runs first
+        if "usecase7_bulk_import" in all_usecases:
+            all_usecases.remove("usecase7_bulk_import")
+            usecases = ["usecase7_bulk_import"] + all_usecases
         else:
-            print("Warning: 'usecase7' not found. Running all available usecases.")
+            print("Warning: 'usecase7_bulk_import' not found. Running all usecases in default order.")
             usecases = all_usecases
 
         if not usecases:
             print(f"No usecase...() methods found in {adapter_cls_name}. Skipping.")
             continue
 
-        print(f"Running usecases: {usecases}")
+        print(f"Running usecases in order: {usecases}")
 
         # Create result filename
         now = datetime.now()
-        base_ts = now.strftime("%d-%m-%Y-%H-%M-%S")
+        base_ts = now.strftime("%d-%m-%Y")
         run_num = find_next_run_number(RESULTS_DIR, key, base_ts)
         db_results_file = os.path.join(RESULTS_DIR, f"{key}_{base_ts}_Run{run_num}.jsonl")
         print(f"Results will go to {db_results_file}")
@@ -248,7 +248,7 @@ def main():
                 "usecase": method_name,
                 "status": status,
                 "error": error_msg,
-                "execution_time_s": round(elapsed, 4),
+                "execution_time_s": round(elapsed, 0),
                 "avg_cpu_percent": stats_summary["avg_cpu"],
                 "peak_cpu_percent": stats_summary["peak_cpu"],
                 "avg_mem_mb": stats_summary["avg_mem"],
@@ -284,6 +284,7 @@ def main():
                 f.write(json.dumps(obj) + "\n")
 
         print(f"→ {len(db_entries)} entries written to {db_results_file}.")
+
 
     print("\nAll databases processed.")
 

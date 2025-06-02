@@ -483,3 +483,10 @@ class MongoDbAdapter(Usecases):
         except Exception as e:
             print(f"Error creating indexes: {e}")
 
+    def close (self) -> None:
+        """Close the MongoDB connection."""
+        if hasattr(self, 'client'):
+            self.client.close()
+            print("MongoDB connection closed.")
+        else:
+            print("No MongoDB client to close.")
