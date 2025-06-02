@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Iterator, Dict
 
 @dataclass
@@ -35,15 +35,38 @@ class ListingRecord:
                 return None
 
         def to_date(val) -> Optional[datetime]:
+            """
+            Convert val to a Python datetime or return None.
+
+            • Accepts ISO strings     → datetime
+            • Accepts datetime object → same datetime
+            • Rejects anything <1970 or >2105 → None
+            """
+            MIN_YEAR = 1970
+            MAX_YEAR = 2105
+
             if not val or str(val).strip() in ("", "NaT", "nan", "None"):
                 return None
-            # Accept only strings or datetimes
+
+            # Already a datetime?
             if isinstance(val, datetime):
-                return val
-            try:
-                return datetime.fromisoformat(str(val))
-            except Exception:
-                raise ValueError("Could not convert date to iso8601 format")
+                dt = val
+            else:
+                try:
+                    dt = datetime.fromisoformat(str(val))
+                except Exception:
+                    # unparsable → treat as missing
+                    return None
+
+            # Convert tz-aware → naive UTC
+            if dt.tzinfo is not None and dt.utcoffset() is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+            # Range check
+            if dt.year < MIN_YEAR or dt.year > MAX_YEAR:
+                return None
+
+            return dt
 
         brokered_by_val = to_float(row.get("brokered_by"))
         status_val = row.get("status", "").strip()
