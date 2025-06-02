@@ -308,61 +308,67 @@ class ClickHouseAdapter(Usecases):
             raise
 
     def usecase7_bulk_import(
-        self,
-        data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),
-        batch_size: int = DEFAULT_BATCH_SIZE
+            self,
+            data: Iterable[ListingRecord] = read_listings(DEFAULT_DATA_FILE_PATH_FOR_IMPORT),
+            batch_size: int = DEFAULT_BATCH_SIZE
     ) -> None:
         client = self._get_client()
         column_names = [
-            'id', 'brokered_by', 'status', 'price', 'lot_size_sqm', 'street',
-            'city', 'state', 'zip_code', 'bed', 'bath', 'house_size_sqm',
-            'prev_sold_date', 'solar_panels'  # solar_panels is part of the table now
+            'id',
+            'brokered_by',
+            'status',
+            'price',
+            'lot_size_sqm',
+            'street',
+            'city',
+            'state',
+            'zip_code',
+            'bed',
+            'bath',
+            'house_size_sqm',
+            'prev_sold_date'
         ]
 
-        batch = []
+        batch: List[tuple] = []
         processed_count = 0
         try:
             for record in data:
                 record_id = uuid.uuid4()
-                # solar_panels will be NULL by default on new insert unless provided
-                # The use case doesn't specify setting solar_panels during import.
-                # Use astuple if ListingRecord matches order. Here, manual for clarity with added id.
-                MIN_TIMESTAMP = 0
-                # Max epoch for DateTime (approx year 2106), Python's timestamp might have its own limits earlier.
-                # Max for ClickHouse DateTime is often 2106-02-07 06:28:15 UTC (4294967295)
-                # Let's use a slightly more conservative upper bound for safety if system time_t is smaller.
-                # Python datetime.MAXYEAR is 9999. timestamp() fails for dates far in future.
-                # A common practical limit might be around year 2038 (signed 32-bit time_t) or 2100.
-                # We'll primarily rely on catching OSError from timestamp() for out-of-range.
-                # ClickHouse's DateTime can go up to around 2106.
-                MAX_YEAR = 2105
                 MIN_YEAR = 1970
+                MAX_YEAR = 2105
+
                 prev_sold = record.prev_sold_date
-                if isinstance(prev_sold, datetime):
-                    # Ensure datetime is naive or convert to UTC if timezone-aware
+                if not isinstance(prev_sold, datetime):
+                    prev_sold = None
+                else:
+                    # If timezone‐aware, convert to naive UTC
                     if prev_sold.tzinfo is not None and prev_sold.tzinfo.utcoffset(prev_sold) is not None:
                         prev_sold = prev_sold.astimezone(timezone.utc).replace(tzinfo=None)
 
-                    # Truncate to supported range for ClickHouse DateTime (1970-2106)
-                    # and to avoid .timestamp() OSError on some systems (like Windows for pre-1970)
-                    if prev_sold.year < MIN_YEAR or prev_sold.year > MAX_YEAR:  # MIN_YEAR was set to 1970
+                    # Clamp to [1970 … 2105]; anything outside becomes None
+                    if prev_sold.year < MIN_YEAR or prev_sold.year > MAX_YEAR:
                         print(
-                            f"Warning: prev_sold_date {prev_sold} at record {processed_count} is out of supported year range [{MIN_YEAR}-{MAX_YEAR}]. Setting to None.")
+                            f"Warning: prev_sold_date {prev_sold} "
+                            f"(record {processed_count}) out of range. Setting to None."
+                        )
                         prev_sold = None
-                    else:
-                        try:
-                            # Test timestamp conversion. This is where OSError was occurring.
-                            _ = prev_sold.timestamp()
-                        except (OSError, ValueError) as e_ts:  # ValueError for e.g. year > 9999
-                            print(f"Warning: Timestamp conversion error for prev_sold_date {prev_sold} "
-                                  f"at record {processed_count}: {e_ts}. Setting to None.")
-                            prev_sold = None
+
                 record_tuple = (
-                    record_id, record.brokered_by, record.status, record.price,
-                    record.lot_size_sqm, record.street, record.city, record.state,
-                    record.zip_code, record.bed, record.bath, record.house_size_sqm,
-                    prev_sold, None  # Default solar_panels to None on import
+                    record_id,
+                    record.brokered_by,
+                    record.status,
+                    record.price,
+                    record.lot_size_sqm,
+                    record.street,
+                    record.city,
+                    record.state,
+                    record.zip_code,
+                    record.bed,
+                    record.bath,
+                    record.house_size_sqm,
+                    prev_sold
                 )
+
                 batch.append(record_tuple)
                 processed_count += 1
 
@@ -371,9 +377,11 @@ class ClickHouseAdapter(Usecases):
                     print(f"Inserted batch of {len(batch)} records. Total processed: {processed_count}")
                     batch = []
 
-            if batch:  # Insert any remaining records
+            # Insert any remaining records
+            if batch:
                 client.insert(self.table_name, batch, column_names=column_names)
                 print(f"Inserted final batch of {len(batch)} records. Total processed: {processed_count}")
+
         except Exception as e:
             print(f"Usecase 7 (bulk import) error at record count approx {processed_count}: {e}")
             raise
@@ -390,3 +398,11 @@ class ClickHouseAdapter(Usecases):
 
     def __del__(self) -> None:
         self.close()
+
+if __name__ == "__main__":
+    adapter = ClickHouseAdapter()
+    try:
+        adapter.usecase7_bulk_import()
+
+    finally:
+        adapter.close()
