@@ -338,7 +338,7 @@ class ClickHouseAdapter(Usecases):
                 MAX_YEAR = 2105
 
                 prev_sold = record.prev_sold_date
-                if not isinstance(prev_sold, datetime):
+                if not isinstance(prev_sold, datetime):  # Refers to datetime.datetime
                     prev_sold = None
                 else:
                     # If timezone‐aware, convert to naive UTC
