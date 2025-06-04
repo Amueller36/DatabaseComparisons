@@ -236,6 +236,9 @@ def main():
 
             elapsed = time.perf_counter() - start_t
 
+            elapsed_time_ms = int(elapsed * 1000)
+            elapsed_time_s = round(elapsed, 3)
+
             stop_event.set()
             monitor.join()
 
@@ -248,7 +251,8 @@ def main():
                 "usecase": method_name,
                 "status": status,
                 "error": error_msg,
-                "execution_time_s": round(elapsed, 0),
+                "execution_time_s": elapsed_time_s,
+                "execution_time_ms": elapsed_time_ms,
                 "avg_cpu_percent": stats_summary["avg_cpu"],
                 "peak_cpu_percent": stats_summary["peak_cpu"],
                 "avg_mem_mb": stats_summary["avg_mem"],
@@ -261,13 +265,13 @@ def main():
             }
             db_entries.append(entry)
 
-            print(
-                f" done. (#{entry['index']}, t={entry['execution_time_s']:.2f}s, "
-                f"avgCPU={entry['avg_cpu_percent']:.1f}%, "
-                f"peakCPU={entry['peak_cpu_percent']:.1f}%, "
-                f"avgMem={entry['avg_mem_mb']:.1f}MiB, "
-                f"peakMem={entry['peak_mem_mb']:.1f}MiB, "
-                f"blkio={entry['total_blkio_mb']:.1f}MiB)"
+            print(f" done. (#{entry['index']}, t={entry['execution_time_s']:.3f}s "
+                 f"({entry['execution_time_ms']} ms), "
+                 f"avgCPU={entry['avg_cpu_percent']:.1f}%, "
+                 f"peakCPU={entry['peak_cpu_percent']:.1f}%, "
+                 f"avgMem={entry['avg_mem_mb']:.1f}MiB, "
+                 f"peakMem={entry['peak_mem_mb']:.1f}MiB, "
+                 f"blkio={entry['total_blkio_mb']:.1f}MiB)"
             )
 
             entry_index += 1
