@@ -30,7 +30,7 @@ class PostgresAdapter(Usecases):
     def __init__(self, db_params: Optional[Dict[str, Any]] = None):
         if db_params is None:
             self.db_params = {
-                "host": os.getenv("PG_HOST", "152.53.248.27"),
+                "host": os.getenv("PG_HOST", "localhost"),
                 "port": os.getenv("PG_PORT", "5432"),
                 "database": os.getenv("PG_DATABASE", "postgres"),
                 "user": os.getenv("PG_USER", "mds"),
@@ -628,8 +628,6 @@ class PostgresAdapter(Usecases):
         if not isinstance(batch_size, int) or batch_size <= 0:
             raise ValueError("batch_size must be a positive integer.")
 
-        self.create_indexes()
-
         records_list = list(data)
 
         total_records = len(records_list)
@@ -985,7 +983,6 @@ class PostgresAdapter(Usecases):
                 """
         try:
             self._execute_query(query, commit=True)
-            self.drop_indexes()
             logger.info("Database has been reset (all entries deleted, identities restarted).")
         except psycopg2.Error as e:
             logger.error(f"Failed to reset database: {e}")
@@ -1003,3 +1000,9 @@ class PostgresAdapter(Usecases):
         self.close()
 
 
+# if __name__ == "__main__":
+#     # Example usage
+#     a = PostgresAdapter()
+#
+#     print(a.usecase4_price_analysis())
+#
