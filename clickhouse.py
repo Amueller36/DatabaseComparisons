@@ -1,3 +1,4 @@
+import logging
 import uuid
 from copy import copy
 from datetime import datetime, timezone
@@ -10,9 +11,18 @@ from usecases import Usecases, DEFAULT_MIN_LISTINGS, DEFAULT_MAX_PRICE, DEFAULT_
     DEFAULT_LIMIT, DEFAULT_POSTAL_CODE, DEFAULT_BELOW_AVG_PCT, DEFAULT_CITY, DEFAULT_MIN_BEDROOMS, DEFAULT_MAX_SIZE_SQM, \
     DEFAULT_DATA_FILE_PATH_FOR_IMPORT, DEFAULT_BATCH_SIZE
 
+logger = logging.getLogger(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+
 
 class ClickHouseAdapter(Usecases):
-    def __init__(self, host: str = 'localhost', port: int = 8123, database: str = 'default', user: str = 'mds',
+    def __init__(self, host: str = '152.53.248.27', port: int = 8123, database: str = 'default', user: str = 'mds',
                  password: str = 'mds'):
         self.host = host
         self.port = port
@@ -43,9 +53,9 @@ class ClickHouseAdapter(Usecases):
                 send_receive_timeout=300  # seconds, for long queries/mutations
             )
             self._client.ping()
-            print(f"Successfully connected to ClickHouse server {self.host}:{self.port}, database '{self.database}'")
+            logger.info(f"Successfully connected to ClickHouse server {self.host}:{self.port}, database '{self.database}'")
         except Exception as e:
-            print(f"Failed to connect to ClickHouse ({self.host}:{self.port}, db: {self.database}): {e}")
+            logger.info(f"Failed to connect to ClickHouse ({self.host}:{self.port}, db: {self.database}): {e}")
             self._client = None  # Ensure client is None if connection failed
             raise ConnectionError(f"ClickHouse connection failed: {e}")
 
@@ -61,7 +71,7 @@ class ClickHouseAdapter(Usecases):
                 client_not_responding = True
 
         if client_uninitialized or client_not_responding:
-            print("ClickHouse client is not available or not responding, attempting to reconnect...")
+            logger.info("ClickHouse client is not available or not responding, attempting to reconnect...")
             self._connect()  # This will raise ConnectionError if it fails
 
         if self._client is None:  # Should not happen if _connect succeeds or raises
@@ -73,26 +83,26 @@ class ClickHouseAdapter(Usecases):
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.fq_table_name} (
             id UUID,
-            brokered_by Float64,
-            status String,
-            price Float64,
+            brokered_by Int32,
+            status Nullable(String),
+            price DECIMAL(14, 2),
             lot_size_sqm Float64,
-            street Float64,
+            street DECIMAL(15,2),
             city String,
-            state String,
+            state String ,
             zip_code Int32,
             bed Nullable(Int16),
             bath Nullable(Int16),
-            house_size_sqm Nullable(Float64),
+            house_size_sqm Nullable(DECIMAL(10,2)),
             prev_sold_date Nullable(DateTime),
-        ) ENGINE = MergeTree()
-        ORDER BY (city, zip_code, id)
+        ) ENGINE = ReplacingMergeTree()
+        ORDER BY (city, state, zip_code, id)
         """
         try:
             client.command(create_table_query)
-            print(f"Table {self.fq_table_name} ensured to exist.")
+            logger.info(f"Table {self.fq_table_name} ensured to exist.")
         except Exception as e:
-            print(f"Failed to create table {self.fq_table_name}: {e}")
+            logger.info(f"Failed to create table {self.fq_table_name}: {e}")
             raise
 
     def _rows_to_dicts(self, query_result: clickhouse_connect.driver.summary.QueryResult) -> List[Dict[str, Any]]:
@@ -103,31 +113,32 @@ class ClickHouseAdapter(Usecases):
         client = self._get_client()
         try:
             client.command(f'TRUNCATE TABLE IF EXISTS {self.fq_table_name}')
-            print(f"Table {self.fq_table_name} truncated.")
+            client.command(f'ALTER TABLE {self.fq_table_name} DROP COLUMN IF EXISTS solar_panels')
+            logger.info(f"Table {self.fq_table_name} truncated.")
         except Exception as e:
-            print(f"Failed to reset database (truncate table {self.fq_table_name}): {e}")
+            logger.info(f"Failed to reset database (truncate table {self.fq_table_name}): {e}")
             raise
 
     @override
     def usecase1_filter_properties(self, min_listings: int = DEFAULT_MIN_LISTINGS, max_price: float= DEFAULT_MAX_PRICE) -> List[Dict[str, Any]]:
         client = self._get_client()
         query = f"""
-        SELECT *
-        FROM {self.table_name}
-        WHERE city IN (
-            SELECT city
-            FROM {self.table_name}
-            GROUP BY city
-            HAVING count(*) > %(min_listings)s
-        )
-        AND price < %(max_price)s
+SELECT *
+FROM {self.table_name}
+WHERE tuple(city, state) IN ( -- Check against a tuple of (city, state)
+    SELECT city, state        -- Select both city and state
+    FROM {self.table_name}
+    GROUP BY city, state      -- Group by both city and state
+    HAVING count(*) > %(min_listings)s
+)
+AND price < %(max_price)s
         """
         try:
 
             result = client.query_df(query, parameters={'min_listings': min_listings, 'max_price': max_price})
             return result
         except Exception as e:
-            print(f"Usecase 1 error: {e}")
+            logger.info(f"Usecase 1 error: {e}")
             raise
 
     def usecase2_update_prices(
@@ -143,7 +154,7 @@ class ClickHouseAdapter(Usecases):
         try:
             broker_id_float = float(broker_id)
         except ValueError:
-            print(f"Invalid broker_id format: '{broker_id}'. Must be convertible to float.")
+            logger.info(f"Invalid broker_id format: '{broker_id}'. Must be convertible to float.")
             return 0
 
         select_ids_query = f"""
@@ -172,7 +183,7 @@ class ClickHouseAdapter(Usecases):
                            settings={'mutations_sync': 1})
             return len(ids_to_update)
         except Exception as e:
-            print(f"Usecase 2 error: {e}")
+            logger.info(f"Usecase 2 error: {e}")
             raise
 
     def usecase3_add_solar_panels(self) -> int:
@@ -186,7 +197,7 @@ class ClickHouseAdapter(Usecases):
         try:
             client.command(add_column_query, settings={'mutations_sync': 1})
         except Exception as e:
-            print(f"Usecase 3 (add column) error: {e}")
+            logger.info(f"Usecase 3 (add column) error: {e}")
             raise
 
         # 2) Populate the column (0 or 1) for every existing row
@@ -198,7 +209,7 @@ class ClickHouseAdapter(Usecases):
         try:
             client.command(update_column_query, settings={'mutations_sync': 1})
         except Exception as e:
-            print(f"Usecase 3 (update column) error: {e}")
+            logger.info(f"Usecase 3 (update column) error: {e}")
             raise
 
         # 3) Return how many rows we now have in the table
@@ -210,7 +221,7 @@ class ClickHouseAdapter(Usecases):
                 total_rows = query_result.result_rows[0][0]
             return total_rows
         except Exception as e:
-            print(f"Usecase 3 (count) error: {e}")
+            logger.info(f"Usecase 3 (count) error: {e}")
             raise
 
 
@@ -225,17 +236,17 @@ class ClickHouseAdapter(Usecases):
 
         try: postal_code_int = int(postal_code)
         except ValueError:
-            print(f"Invalid postal_code format: '{postal_code}'. Must be an integer.")
+            logger.info(f"Invalid postal_code format: '{postal_code}'. Must be an integer.")
             return results
 
+        # Part 1: Find properties below threshold
         avg_price_query = f"""
-        SELECT avgIf(price / house_size_sqm, house_size_sqm > 0)
+        SELECT avgIf(price / lot_size_sqm, lot_size_sqm > 0 AND price > 0)
         FROM {self.table_name} WHERE zip_code = %(postal_code_int)s
         """
         try:
             query_result_avg = client.query(avg_price_query, parameters={'postal_code_int': postal_code_int})
             local_avg_price_per_sqm = None
-            # Extract scalar from result_rows
             if query_result_avg.result_rows and query_result_avg.result_rows[0] and query_result_avg.result_rows[0][0] is not None:
                 local_avg_price_per_sqm = query_result_avg.result_rows[0][0]
 
@@ -244,8 +255,9 @@ class ClickHouseAdapter(Usecases):
                 below_threshold_query = f"""
                 SELECT * FROM {self.table_name}
                 WHERE zip_code = %(postal_code_int)s
-                  AND house_size_sqm IS NOT NULL AND house_size_sqm > 0
-                  AND (price / house_size_sqm) < %(threshold_price_per_sqm)s
+                  AND lot_size_sqm IS NOT NULL AND lot_size_sqm > 0
+                  AND price IS NOT NULL AND price > 0 
+                  AND (price / lot_size_sqm) < %(threshold_price_per_sqm)s
                 """
                 query_result_bt = client.query(
                     below_threshold_query,
@@ -253,41 +265,45 @@ class ClickHouseAdapter(Usecases):
                 )
                 results["below_threshold"] = self._rows_to_dicts(query_result_bt)
         except Exception as e:
-            print(f"Usecase 4 (Part 1 - below_threshold) error: {e}")
+            logger.info(f"Usecase 4 (Part 1 - below_threshold) error: {e}")
 
+        # Part 2: Sort all properties in city by cheapest price
+        # Ensure to filter for valid prices for meaningful sorting
         sorted_by_city_query = f"""
-        SELECT * FROM {self.table_name} WHERE city = %(city)s ORDER BY price ASC
+        SELECT * FROM {self.table_name} 
+        WHERE city = %(city)s AND price IS NOT NULL AND price > 0
+        ORDER BY price ASC
         """
         try:
             query_result_sc = client.query(sorted_by_city_query, parameters={'city': city})
             results["sorted_by_city"] = self._rows_to_dicts(query_result_sc)
         except Exception as e:
-            print(f"Usecase 4 (Part 2 - sorted_by_city) error: {e}")
+            logger.info(f"Usecase 4 (Part 2 - sorted_by_city) error: {e}")
         return results
 
     def usecase5_average_price_per_city(self) -> Dict[str, float]:
         client = self._get_client()
+        # Aligned to use lot_size_sqm
         query = f"""
-        SELECT city, avgIf(price / house_size_sqm, house_size_sqm > 0) AS avg_price_per_sqm
-        FROM {self.table_name} GROUP BY city
+        SELECT city, state, avgIf(price / lot_size_sqm, lot_size_sqm > 0 AND price > 0) AS avg_price_per_sqm
+        FROM {self.table_name} GROUP BY city, state
         """
         try:
             query_result = client.query(query)
             city_avg_prices = {}
-            # Assuming column order is 'city', 'avg_price_per_sqm' based on query
-            # For more robustness, could use column_names.index('city') etc.
-            # but direct indexing is fine if query is stable.
             city_idx = query_result.column_names.index('city')
+            state_idx = query_result.column_names.index('state')  # Get state index
             avg_price_idx = query_result.column_names.index('avg_price_per_sqm')
 
             for row in query_result.result_rows:
                 city_name = row[city_idx]
+                state_name = row[state_idx]
                 avg_price = row[avg_price_idx]
-                if avg_price is not None: # avgIf can result in None
-                    city_avg_prices[city_name] = float(avg_price)
+                if avg_price is not None:
+                    city_avg_prices[f"{city_name}, {state_name}"] = float(avg_price)
             return city_avg_prices
         except Exception as e:
-            print(f"Usecase 5 error: {e}")
+            logger.info(f"Usecase 5 error: {e}")
             raise
 
     def usecase6_filter_by_bedrooms_and_size(
@@ -304,7 +320,7 @@ class ClickHouseAdapter(Usecases):
             query_result = client.query(query, parameters={'min_bedrooms': min_bedrooms, 'max_size': max_size})
             return self._rows_to_dicts(query_result)
         except Exception as e:
-            print(f"Usecase 6 error: {e}")
+            logger.info(f"Usecase 6 error: {e}")
             raise
 
     def usecase7_bulk_import(
@@ -324,7 +340,7 @@ class ClickHouseAdapter(Usecases):
         # MIN_YEAR and MAX_YEAR define the valid range for prev_sold_date
         # Your data conversion script now filters out year 1970 and earlier.
         # So, MIN_YEAR here should reflect the earliest valid year (e.g., 1971).
-        MIN_ACCEPTABLE_YEAR = 1971
+        MIN_ACCEPTABLE_YEAR = 1970
         MAX_ACCEPTABLE_YEAR = 2105  # Max supported by ClickHouse DateTime is around 2106
 
         try:
@@ -361,9 +377,9 @@ class ClickHouseAdapter(Usecases):
                     try:
                         client.insert(self.table_name, batch, column_names=column_names)
                         processed_count += len(batch)
-                        print(f"Inserted batch of {len(batch)} records. Total processed: {processed_count}")
+                        logger.info(f"Inserted batch of {len(batch)} records. Total processed: {processed_count}")
                     except Exception as insert_exc:
-                        print(
+                        logger.info(
                             f"ERROR during client.insert for a batch. Processed before this batch: {processed_count}. Batch size: {len(batch)}. Error: {insert_exc}")
                         raise
                     finally:
@@ -374,16 +390,16 @@ class ClickHouseAdapter(Usecases):
                 try:
                     client.insert(self.table_name, batch, column_names=column_names)
                     processed_count += len(batch)
-                    print(f"Inserted final batch of {len(batch)} records. Total processed: {processed_count}")
+                    logger.info(f"Inserted final batch of {len(batch)} records. Total processed: {processed_count}")
                 except Exception as insert_exc:
-                    print(
+                    logger.info(
                         f"ERROR during client.insert for the final batch. Processed before this batch: {processed_count}. Final batch size: {len(batch)}. Error: {insert_exc}")
                     raise
                 finally:
                     batch = []
 
         except Exception as e:
-            print(
+            logger.info(
                 f"Usecase 7 (bulk import) failed. Records processed successfully into DB: {processed_count}. Records in current (failed) batch: {len(batch)}. Error: {e}")
             raise
 
@@ -393,9 +409,9 @@ class ClickHouseAdapter(Usecases):
         if self._client:
             try:
                 self._client.close()
-                print("ClickHouse client closed.")
+                logger.info("ClickHouse client closed.")
             except Exception as e:
-                print(f"Error closing ClickHouse client: {e}")
+                logger.info(f"Error closing ClickHouse client: {e}")
             finally:
                 self._client = None
 
@@ -403,9 +419,12 @@ class ClickHouseAdapter(Usecases):
         self.close()
 
 if __name__ == "__main__":
-    adapter = ClickHouseAdapter()
-    try:
-        adapter.usecase7_bulk_import()
+        clickhouse = ClickHouseAdapter()
+        clickhouse.reset_database()
+        clickhouse.usecase7_bulk_import()  # Import data from the default file
+        logger.info(f'Usecase 4: {len(clickhouse.usecase4_price_analysis()["below_threshold"])}')
+        logger.info(f'Usecase 4: {len(clickhouse.usecase4_price_analysis()["sorted_by_city"])}')
+        logger.info(f"Usecase 5: {len(clickhouse.usecase5_average_price_per_city())}")
 
-    finally:
-        adapter.close()
+        logger.info(f"Usecase 1: {len(clickhouse.usecase1_filter_properties())}")
+        clickhouse.close()

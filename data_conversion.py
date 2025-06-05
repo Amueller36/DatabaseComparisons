@@ -8,9 +8,14 @@ OUTPUT_CSV_FILE = "transformed_real_estate_data.csv"
 ACRE_TO_SQM = 4046.8564224
 SQFT_TO_SQM = 0.09290304
 
+def format_city(city):
+    """Formatiere Städtenamen einheitlich: 'Title Case' und keine Leerzeichen."""
+    if pd.isna(city):
+        return pd.NA
+    # Nur Alphabetisches behalten und alles korrekt großschreiben
+    return str(city).strip().title()
 
 def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
-    # 0. Create a copy to avoid SettingWithCopyWarning
     df = df.copy()
 
     # 1) Spalten umbenennen + neue Spalten anlegen
@@ -19,7 +24,7 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
         "house_size": "house_size_sqm"
     }, inplace=True)
 
-    # 2) Numerische Konvertierung für Flächenangaben, fehlende Werte bleiben NaN
+    # 2) Flächen konvertieren
     area_conversions = {
         "lot_size_sqm": ACRE_TO_SQM,
         "house_size_sqm": SQFT_TO_SQM,
@@ -30,28 +35,17 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
         else:
             df[col] = pd.NA
 
-    # 3) Datum konvertieren (prev_sold_date) - MODIFIED SECTION
+    # 3) Datum (prev_sold_date) konvertieren
     if "prev_sold_date" in df.columns:
-        # Parse to datetime, making them timezone-aware (UTC). Invalid formats become NaT.
-        # Dies stellt eine konsistente Basis für den Jahresvergleich sicher.
         df["prev_sold_date"] = pd.to_datetime(df["prev_sold_date"], errors="coerce", utc=True)
-
-        # Setze alle Daten aus dem Jahr 1970 oder früher auf NaT (Not a Time).
-        # Dies beinhaltet auch den exakten Epoch-Beginn und alle vorherigen Daten.
-        if pd.api.types.is_datetime64_any_dtype(df["prev_sold_date"]):
-            # .dt.year auf UTC-Datetimes gibt das UTC-Jahr zurück.
-            year_1970_or_earlier_mask = df["prev_sold_date"].dt.year <= 1970
-            df.loc[year_1970_or_earlier_mask, "prev_sold_date"] = pd.NaT
-
-        # Konvertiere zu Python native datetime Objekten. NaT wird zu None.
-        # Ihr ClickHouseAdapter Code ist darauf vorbereitet, None-Werte oder
-        # gültige (jetzt definitiv nach 1970 beginnende) UTC-Datetimes zu handhaben.
+        # Ungültige/zu alte Daten entfernen
+        year_1970_or_earlier_mask = df["prev_sold_date"].dt.year <= 1970
+        df.loc[year_1970_or_earlier_mask, "prev_sold_date"] = pd.NaT
         df["prev_sold_date"] = df["prev_sold_date"].dt.to_pydatetime()
     else:
         df["prev_sold_date"] = pd.NA
 
-
-    # 4) Erforderliche Spalten validieren und ungültige Zeilen entfernen
+    # 4) Pflichtfelder prüfen
     required_field_specs = {
         "brokered_by": "numeric",
         "status": "string",
@@ -74,11 +68,16 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].astype(str).str.strip()
             df[col] = df[col].replace(['', 'nan', 'NaN', 'None', 'none', 'NA', 'NaT', '<NA>', 'null'], pd.NA)
 
+    # 4b) Städte vereinheitlichen!
+    if "city" in df.columns:
+        df["city"] = df["city"].apply(format_city)
+
+    # 5) Zeilen mit fehlenden Pflichtfeldern entfernen
     existing_cols_for_dropna = [c for c in cols_to_drop_na if c in df.columns]
     if existing_cols_for_dropna:
         df.dropna(subset=existing_cols_for_dropna, inplace=True)
 
-    # 5) Optionale Spalten-Typen einschränken
+    # 6) Optional: Datentypen für bestimmte Felder setzen
     dtype_casts = {
         "brokered_by": "float32",
         "price": "float32",
@@ -91,12 +90,17 @@ def transform_real_estate_data(df: pd.DataFrame) -> pd.DataFrame:
     }
     for col, dtype in dtype_casts.items():
         if col in df.columns:
-            if pd.api.types.is_integer_dtype(dtype):
-                df[col] = pd.to_numeric(df[col], errors='coerce').astype(dtype)
-            else:
-                df[col] = pd.to_numeric(df[col], errors="coerce").astype(dtype)
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(dtype)
+
+    # 7) Dubletten entfernen – nach allen wichtigen Feldern!
+    # Tipp: city, street, zip_code, price sind oft die besten "natürlichen" Keys für Immobilien
+    dedup_columns = ["brokered_by", "prev_sold_date", "price", "street", "city", "zip_code"]
+    subset = [col for col in dedup_columns if col in df.columns]
+    if subset:
+        df.drop_duplicates(subset=subset, keep="first", inplace=True)
 
     return df
+
 
 
 def main():
@@ -121,7 +125,7 @@ def main():
             OUTPUT_CSV_FILE,
             index=False,
             float_format="%.2f",
-            date_format="%Y-%m-%d %H:%M:%S", # Behält volle Datetime-Info
+            date_format="%Y-%m-%d %H:%M:%S",  # Behält volle Datetime-Info
             na_rep=""
         )
         print(f"Geschrieben: {len(df_trans.columns)} Spalten nach {OUTPUT_CSV_FILE}.")
