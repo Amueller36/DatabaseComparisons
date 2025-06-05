@@ -100,3 +100,15 @@ class ListingRecord:
             house_size_sqm= to_float(row.get("house_size_sqm", "")),
             prev_sold_date= to_date(row.get("prev_sold_date"))
         )
+
+
+def read_listings(path: str) -> Iterator[ListingRecord]:
+    import csv
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                yield ListingRecord.from_csv_row(row)
+            except ValueError:
+                # any row that had missing/blank city (or another mandatory field) is skipped
+                continue
