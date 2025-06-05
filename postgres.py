@@ -691,9 +691,13 @@ class PostgresAdapter(Usecases):
                         brokers_data,
                         page_size=len(brokers_data)
                     )
+                zip_codes_dict = {}
+                for r in batch:
+                    # r.city and r.state should already have been normalized (strip()+title())
+                    zip_codes_dict[r.zip_code] = (r.zip_code, r.city, r.state)
 
                 # 2. Prepare and Insert Zip Codes (as before)
-                zip_codes_data = list(set([(r.zip_code, r.city, r.state) for r in batch]))
+                zip_codes_data = list(zip_codes_dict.values())
                 if zip_codes_data:  # Ensure not empty
                     psycopg2.extras.execute_values(
                         cur,
