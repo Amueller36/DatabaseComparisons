@@ -45,7 +45,7 @@ class ListingRecord:
             MIN_YEAR = 1970
             MAX_YEAR = 2105
 
-            if not val or str(val).strip() in ("", "NaT", "nan", "None"):
+            if not val or str(val).strip() in ("", "NaT", "nan", "None", "NaN"):
                 return None
 
             # Already a datetime?
@@ -73,8 +73,8 @@ class ListingRecord:
         price_val = to_float(row.get("price"))
         lot_size_val = to_float(row.get("lot_size_sqm"))
         street_val = to_float(row.get("street"))
-        city_val = row.get("city", "").strip()
-        state_val = row.get("state", "").strip()
+        city_val = row.get("city").strip()
+        state_val = row.get("state").strip()
         zip_code_val = to_int(row.get("zip_code"))
 
         # Validation of mandatory fields
