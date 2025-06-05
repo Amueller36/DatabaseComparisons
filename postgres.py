@@ -30,6 +30,7 @@ class PostgresAdapter(Usecases):
     def __init__(self, db_params: Optional[Dict[str, Any]] = None):
         if db_params is None:
             self.db_params = {
+                #"host": os.getenv("PG_HOST", "152.53.248.27"),
                 "host": os.getenv("PG_HOST", "localhost"),
                 "port": os.getenv("PG_PORT", "5432"),
                 "database": os.getenv("PG_DATABASE", "postgres"),
@@ -696,10 +697,11 @@ class PostgresAdapter(Usecases):
                 if zip_codes_data:  # Ensure not empty
                     psycopg2.extras.execute_values(
                         cur,
-                        "INSERT INTO zip_codes (zip_code, city, state) VALUES %s ON CONFLICT (zip_code) DO NOTHING",
+                        "INSERT INTO zip_codes (zip_code, city, state) VALUES %s ON CONFLICT (zip_code) DO UPDATE SET city = EXCLUDED.city, state = EXCLUDED.state",
                         zip_codes_data,
                         page_size=len(zip_codes_data)
                     )
+                    ## Now, if batch 1 accidentally inserted (33993, "", "Florida"), batch 2’s (33993, "Matlacha", "Florida") will overwrite it.
 
                 # 3. Prepare and Insert Listings, RETURNING listing_id
                 # We need a way to map returned listing_ids back to the original records.
@@ -1000,9 +1002,9 @@ class PostgresAdapter(Usecases):
         self.close()
 
 
-# if __name__ == "__main__":
-#     # Example usage
-#     a = PostgresAdapter()
-#
-#     print(a.usecase4_price_analysis())
-#
+if __name__ == "__main__":
+    # Example usage
+    a = PostgresAdapter()
+
+    print(a.usecase4_price_analysis())
+
