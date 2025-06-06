@@ -11,7 +11,7 @@
     <data-source source="LOCAL" name="default@152.53.248.27" uuid="96e41dcd-2385-40e6-b50a-9c0d3ec322f4">
       <driver-ref>clickhouse</driver-ref>
       <synchronize>true</synchronize>
-      <jdbc-driver>ru.yandex.clickhouse.ClickHouseDriver</jdbc-driver>
+      <jdbc-driver>com.clickhouse.jdbc.ClickHouseDriver</jdbc-driver>
       <jdbc-url>jdbc:clickhouse://152.53.248.27:8123/default</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
