@@ -22,8 +22,8 @@ logging.basicConfig(
 
 
 class ClickHouseAdapter(Usecases):
-    def __init__(self, host: str = '152.53.248.27', port: int = 8123, database: str = 'default', user: str = 'mds',
-                 password: str = 'mds'):
+    def __init__(self, host: str = 'localhost', port: int = 8123, database: str = 'default', user: str = 'redacted',
+                 password: str = 'redacted'):
         self.host = host
         self.port = port
         self.database = database
@@ -85,17 +85,17 @@ class ClickHouseAdapter(Usecases):
             id UUID,
             brokered_by Int32,
             status Nullable(String),
-            price DECIMAL(14, 2),
+            price DECIMAL(16, 2),
             lot_size_sqm Float64,
-            street DECIMAL(15,2),
+            street DECIMAL(16,2),
             city String,
             state String ,
             zip_code Int32,
             bed Nullable(Int16),
             bath Nullable(Int16),
-            house_size_sqm Nullable(DECIMAL(10,2)),
+            house_size_sqm Nullable(DECIMAL(16,2)),
             prev_sold_date Nullable(DateTime),
-        ) ENGINE = ReplacingMergeTree()
+        ) ENGINE = MergeTree()
         ORDER BY (city, state, zip_code, id)
         """
         try:
@@ -120,22 +120,32 @@ class ClickHouseAdapter(Usecases):
             raise
 
     @override
-    def usecase1_filter_properties(self, min_listings: int = DEFAULT_MIN_LISTINGS, max_price: float= DEFAULT_MAX_PRICE) -> List[Dict[str, Any]]:
+    def usecase1_filter_properties(
+        self,
+        min_listings: int = DEFAULT_MIN_LISTINGS,
+        max_price: float = DEFAULT_MAX_PRICE
+    ) -> List[Dict[str, Any]]:
         client = self._get_client()
         query = f"""
-SELECT *
-FROM {self.table_name}
-WHERE tuple(city, state) IN ( -- Check against a tuple of (city, state)
-    SELECT city, state        -- Select both city and state
+    SELECT *
     FROM {self.table_name}
-    GROUP BY city, state      -- Group by both city and state
-    HAVING count(*) > %(min_listings)s
-)
-AND price < %(max_price)s
-        """
+    WHERE city       IS NOT NULL
+      AND state      IS NOT NULL
+      AND tuple(city, state) IN (
+        SELECT city, state
+        FROM {self.table_name}
+        WHERE city  IS NOT NULL
+          AND state IS NOT NULL
+        GROUP BY city, state
+        HAVING count(*) > %(min_listings)s
+    )
+      AND price < %(max_price)s
+            """
         try:
-
-            result = client.query_df(query, parameters={'min_listings': min_listings, 'max_price': max_price})
+            result = client.query_df(
+                query,
+                parameters={'min_listings': min_listings, 'max_price': max_price}
+            )
             return result
         except Exception as e:
             logger.info(f"Usecase 1 error: {e}")

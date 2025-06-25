@@ -9,8 +9,7 @@ import random
 from usecases import *
 
 # --- Configuration ---
-# MONGO_URI = "mongodb://localhost:27020"
-MONGO_URI = "mongodb://152.53.248.27:27020"  # Make sure this is accessible
+MONGO_URI = "mongodb://localhost:27020"
 DATABASE_NAME = "real_estate_db"
 COLLECTION_NAME = "listings"  # Using a new collection name to avoid conflicts
 CSV_FILE_PATH = "transformed_real_estate_data.csv"
@@ -63,9 +62,9 @@ class MongoDbAdapter(Usecases):
             raise
 
     def usecase1_filter_properties(
-            self,
-            min_listings: int = DEFAULT_MIN_LISTINGS,
-            max_price: float = DEFAULT_MAX_PRICE
+        self,
+        min_listings: int = DEFAULT_MIN_LISTINGS,
+        max_price: float = DEFAULT_MAX_PRICE
     ) -> List[Dict[str, Any]]:
         """
         Use Case 1: Find city/state combinations with more than min_listings properties
@@ -74,68 +73,59 @@ class MongoDbAdapter(Usecases):
         """
         try:
             lookup_pipeline = [
-                # Stage 1: Find qualifying city/state pairs (similar to your current first step)
+                # 1) Exclude null/missing city or state
                 {
                     "$match": {
-                        "address.city": {"$ne": None},
+                        "address.city":  {"$ne": None},
                         "address.state": {"$ne": None}
                     }
                 },
+                # 2) Count *all* listings per city/state
                 {
                     "$group": {
                         "_id": {
-                            "city": {"$toLower": "$address.city"},
-                            "state": {"$toLower": "$address.state"}
+                            "city":  "$address.city",
+                            "state": "$address.state"
                         },
                         "count": {"$sum": 1}
                     }
                 },
+                # 3) Only keep groups with > min_listings
                 {
                     "$match": {
                         "count": {"$gt": min_listings}
                     }
                 },
-                # Stage 2: Use $lookup to find all original documents matching these city/state pairs
-                # and also matching the price condition.
+                # 4) Lookup the actual docs in those qualifying city/state pairs
                 {
                     "$lookup": {
-                        "from": self.collection.name,  # Target the same collection
-                        "let": {  # Define variables from the current pipeline document (the qualifying city/state)
-                            "qual_city": "$_id.city",
+                        "from":     self.collection.name,
+                        "let": {
+                            "qual_city":  "$_id.city",
                             "qual_state": "$_id.state"
                         },
-                        "pipeline": [  # Sub-pipeline to run on the 'from' collection for each input document
+                        "pipeline": [
                             {
                                 "$match": {
-                                    "$expr": {  # $expr allows use of aggregation expressions in $match
+                                    "$expr": {
                                         "$and": [
-                                            # Match city (case-insensitive using stored lowercase)
-                                            {"$eq": ["$address.city", "$$qual_city"]},
-                                            # Assumes address.city is stored as lowercase
-                                            # Match state (case-insensitive using stored lowercase)
+                                            {"$eq": ["$address.city",  "$$qual_city"]},
                                             {"$eq": ["$address.state", "$$qual_state"]},
-                                            # Assumes address.state is stored as lowercase
-                                            # Match price
                                             {"$lt": ["$price", max_price]},
                                             {"$ne": ["$price", None]}
                                         ]
                                     }
                                 }
                             }
-                            # Optionally, you can add a $project stage here if you only need specific fields
                         ],
-                        "as": "matching_listings_for_city_state"  # Name of the new array field
+                        "as": "matching_listings_for_city_state"
                     }
                 },
-                # Stage 3: Unwind the array of listings
-                {
-                    "$unwind": "$matching_listings_for_city_state"
-                },
-                # Stage 4: Promote the actual listing document to the root
-                {
-                    "$replaceRoot": {"newRoot": "$matching_listings_for_city_state"}
-                }
+                # 5) Flatten out to one document per listing
+                {"$unwind": "$matching_listings_for_city_state"},
+                {"$replaceRoot": {"newRoot": "$matching_listings_for_city_state"}}
             ]
+
             return list(self.collection.aggregate(lookup_pipeline))
 
         except Exception as e:
@@ -582,18 +572,3 @@ class MongoDbAdapter(Usecases):
             logger.info("MongoDB connection closed.")
         else:
             logger.info("No MongoDB client to close or already closed.")
-
-
-
-
-if __name__ == '__main__':
-    mongodb = MongoDbAdapter()
-    mongodb.reset_database()
-    mongodb.usecase7_bulk_import()  # Import data from the default file
-    logger.info(f'Usecase 4: {len(mongodb.usecase4_price_analysis()["below_threshold"])}')
-    logger.info(f'Usecase 4: {len(mongodb.usecase4_price_analysis()["sorted_by_city"])}')
-    logger.info(f"Usecase 5: {len(mongodb.usecase5_average_price_per_city())}")
-
-
-    logger.info(f"Usecase 1: {len(mongodb.usecase1_filter_properties())}")
-    mongodb.close()
